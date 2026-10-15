@@ -7,6 +7,7 @@ import { cors } from './cors.js';
 import { createDb } from './db.js';
 import { createLlm, LlmError } from './llm/index.js';
 import { createApiRouter } from './routes/api.js';
+import { findWebDir, mountDashboards } from './web.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const config = loadConfig();
@@ -39,7 +40,11 @@ app.use(
 const vendor = (file) => (_req, res) => res.sendFile(path.join(here, '..', 'node_modules', file));
 app.get('/vendor/supabase.js', vendor('@supabase/supabase-js/dist/umd/supabase.js'));
 app.get('/vendor/chart.js', vendor('chart.js/dist/chart.umd.min.js'));
-app.use(express.static(path.join(here, '..', 'public')));
+// The built dashboard lives in /app/web in the Docker image, or web/dist/client in the repo.
+mountDashboards(app, {
+  webDir: findWebDir([process.env.WEB_DIR, path.join(here, '..', 'web'), path.join(here, '..', '..', 'web', 'dist', 'client')]),
+  classicDir: path.join(here, '..', 'public'),
+});
 
 app.use((err, _req, res, _next) => {
   if (err instanceof multer.MulterError) {
