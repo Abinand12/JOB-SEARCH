@@ -69,7 +69,7 @@ Hosting: Supabase's free plan covers this app. Railway bills by usage on a small
    - **The database sets itself up.** Before each deploy Railway runs `node src/migrate.js` (the pre-deploy command). It applies every file in [`supabase/migrations/`](supabase/migrations) that hasn't run yet: tables, row-level security, Realtime and the private `resumes` storage bucket. It records what ran in `app_private.schema_migrations`. If a migration fails, the deploy stops and the previous version keeps running; the error is in the deploy logs.
    - Without `DATABASE_URL` the step is skipped. Then run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) once in Supabase's **SQL Editor** instead. It is safe to run both ways.
 3. **Settings → Networking → Generate Domain**.
-4. Back in Supabase, set **Authentication → URL Configuration → Site URL** to that domain so email confirmation links come back to your dashboard.
+4. Back in Supabase, open **Authentication → URL Configuration**. Set **Site URL** to that domain, and under **Redirect URLs** add `https://YOUR-APP.up.railway.app/**` and, if you use the Lovable dashboard, `https://*.lovable.app/**`. Otherwise sign-up confirmation emails point at `http://localhost:3000` and fail to open.
 
 ### 3. Dashboard
 

@@ -80,7 +80,10 @@ function showAuth() {
     const msg = $('#auth-message');
     msg.textContent = mode === 'signup' ? 'Creating account…' : 'Signing in…';
     const { data, error } =
-      mode === 'signup' ? await supabase.auth.signUp(creds) : await supabase.auth.signInWithPassword(creds);
+      mode === 'signup'
+        ? // Bring the confirmation link back to this dashboard (must be in Supabase's Redirect URLs).
+          await supabase.auth.signUp({ ...creds, options: { emailRedirectTo: location.origin } })
+        : await supabase.auth.signInWithPassword(creds);
     if (error) {
       msg.textContent = error.message;
       return;
