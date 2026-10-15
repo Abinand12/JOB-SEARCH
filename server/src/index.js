@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import multer from 'multer';
 import { loadConfig, missingConfig } from './config.js';
+import { cors } from './cors.js';
 import { createDb } from './db.js';
 import { createLlm, LlmError } from './llm/index.js';
 import { createApiRouter } from './routes/api.js';
@@ -25,6 +26,7 @@ app.use((_req, res, next) => {
   next();
 });
 
+app.use('/api', cors(config.allowedOrigins));
 app.use(
   '/api',
   createApiRouter({

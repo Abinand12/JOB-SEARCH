@@ -1,5 +1,7 @@
 // Central place for environment configuration. Railway injects these as service variables.
 
+import { DEFAULT_ALLOWED_ORIGINS } from './cors.js';
+
 const PROVIDER_DEFAULTS = {
   // Free tier available (Google AI Studio key). The "-latest" alias follows Google's current Flash-Lite.
   gemini: {
@@ -64,6 +66,8 @@ export function loadConfig(env = process.env) {
     },
     // Guard against a runaway loop burning LLM credits: answer requests per user per minute.
     answerRequestsPerMinute: Number(env.ANSWER_REQUESTS_PER_MINUTE) || 30,
+    // Browser origins allowed to call the API (comma separated, "*" = one subdomain label).
+    allowedOrigins: env.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(',') : DEFAULT_ALLOWED_ORIGINS,
   };
 }
 
