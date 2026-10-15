@@ -37,6 +37,8 @@
     } else if (msg.type === 'external:opened' || msg.type === 'external:done') {
       externalWaiter?.(msg);
       sendResponse({ ok: true });
+    } else if (msg.type === 'linkedin:diagnose') {
+      sendResponse(diagnose());
     }
   });
 
@@ -403,5 +405,77 @@
     JA.panel.show(`Applying on ${job.company || 'the company'} website in another tab…`);
     const done = await waitForExternal('external:done', 20 * 60_000);
     return done?.status === 'submitted' ? 'submitted' : done?.status ?? 'skip';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Self-check: reports which parts of the current LinkedIn page the bot can find,
+  // without clicking anything. Run from the popup ("Check this LinkedIn page").
+  // ---------------------------------------------------------------------------
+
+  function diagnose() {
+    const probe = (selector) => {
+      const els = [...document.querySelectorAll(selector)];
+      const first = els.find(JA.visible) ?? els[0];
+      return { total: els.length, visible: els.filter(JA.visible).length, sample: first ? JA.text(first).slice(0, 80) : '' };
+    };
+    const check = (key, label, ok, detail = '', { optional = false } = {}) => ({ key, label, ok: Boolean(ok), optional, detail });
+
+    const onSearch = isJobSearchPage();
+    const onJobView = /^\/jobs\/view\//.test(location.pathname);
+    const cards = probe(SELECTORS.jobCard);
+    const ids = [...document.querySelectorAll(SELECTORS.jobCard)].map(cardJobId).filter(Boolean);
+    const title = probe(SELECTORS.title);
+    const company = probe(SELECTORS.company);
+    const place = probe(SELECTORS.location);
+    const description = probe(SELECTORS.description);
+    const { easy, external } = applyButtons();
+    const applied = alreadyApplied();
+    const modal = getModal();
+    const verification = JA.detectVerification();
+
+    const checks = [
+      check('page', 'On a LinkedIn jobs page', onSearch || onJobView, location.pathname),
+      check('cards', 'Job cards in the results list', cards.total > 0, `${cards.total} found, ${cards.visible} visible`, { optional: !onSearch }),
+      check('card_ids', 'Job IDs readable from the cards', ids.length > 0, ids.slice(0, 3).join(', '), { optional: !onSearch }),
+      check('selected', 'Selected job ID', Boolean(detailJobId()), detailJobId() ?? 'click a job first'),
+      check('title', 'Job title', title.visible > 0, title.sample),
+      check('company', 'Company name', company.visible > 0, company.sample),
+      check('location', 'Location', place.total > 0, place.sample, { optional: true }),
+      check('description', 'Job description', description.total > 0, `${description.sample.slice(0, 40)}…`),
+      check(
+        'apply',
+        'Apply button',
+        Boolean(easy || external) || applied,
+        easy ? 'Easy Apply' : external ? 'Apply on company website' : applied ? 'already applied' : 'not found',
+      ),
+      check('verification', 'No verification challenge on the page', !verification, verification ?? ''),
+    ];
+
+    if (modal) {
+      const { fields } = JA.collectFields(modal);
+      const primary = primaryButton(modal);
+      checks.push(
+        check('modal', 'Easy Apply dialog', true, JA.text(modal.querySelector('h2, h3')).slice(0, 60)),
+        check(
+          'fields',
+          'Questions detected in the dialog',
+          true,
+          fields.map((f) => `${f.type}${f.required ? '*' : ''}: ${f.label || '(no label)'}${f.options?.length ? ` [${f.options.length} options]` : ''}`).join(' | ') || 'none on this step',
+          { optional: true },
+        ),
+        check('next', 'Next / Review / Submit button', Boolean(primary), primary ? (primary.getAttribute('aria-label') || JA.text(primary)) : 'not found'),
+      );
+    } else {
+      checks.push(check('modal', 'Easy Apply dialog (open one to check its questions)', false, 'not open', { optional: true }));
+    }
+
+    const required = checks.filter((c) => !c.optional);
+    return {
+      ok: required.every((c) => c.ok),
+      version: chrome.runtime.getManifest().version,
+      url: location.origin + location.pathname,
+      checked_at: new Date().toISOString(),
+      checks,
+    };
   }
 })();

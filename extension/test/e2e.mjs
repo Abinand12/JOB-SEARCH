@@ -220,6 +220,25 @@ await scenario('LinkedIn: Easy Apply, external apply, title filter', async () =>
 
   assert.ok(!log.applications.some((a) => /intern/i.test(a.job_title)), 'intern job filtered out');
   assert.equal(log.badAuth, 0);
+
+  // "Check this LinkedIn page" self-check, on the results page and inside the Easy Apply dialog.
+  const diagnose = () => worker.evaluate((id) => chrome.tabs.sendMessage(id, { type: 'linkedin:diagnose' }), tabId);
+  const report = await diagnose();
+  const byKey = Object.fromEntries(report.checks.map((c) => [c.key, c]));
+  assert.equal(report.ok, true, JSON.stringify(report.checks, null, 1));
+  assert.match(byKey.cards.detail, /^3 found/);
+  assert.equal(byKey.apply.ok, true);
+  assert.equal(byKey.modal.ok, false);
+  assert.equal(byKey.modal.optional, true);
+
+  await page.evaluate(() => {
+    document.querySelector('[data-occludable-job-id="101"] a').click();
+  });
+  await page.click('#apply-btn');
+  const inModal = Object.fromEntries((await diagnose()).checks.map((c) => [c.key, c]));
+  assert.equal(inModal.modal.ok, true);
+  assert.match(inModal.fields.detail, /Mobile phone number/);
+  assert.equal(inModal.next.detail, 'Continue to next step');
 });
 
 await context.close();

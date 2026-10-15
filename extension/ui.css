@@ -28,3 +28,11 @@ input { font: inherit; color: var(--text); background: var(--bg); border: 1px so
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .links { font-size: 13px; margin: 8px 0 0; }
 a { color: var(--accent); }
+.report { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; }
+.report .summary { margin: 0 0 6px; font-weight: 600; }
+.report ul { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 4px; font-size: 12px; max-height: 260px; overflow: auto; }
+.report li { display: flex; gap: 6px; align-items: baseline; word-break: break-word; }
+.report .mark { flex: none; width: 1em; font-weight: 700; }
+.report li.ok .mark { color: #0ca30c; }
+.report li.fail .mark { color: var(--error); }
+.report li.optional { color: var(--secondary); }
