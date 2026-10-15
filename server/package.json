@@ -1,0 +1,25 @@
+{
+  "name": "job-autopilot-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API + analytics dashboard for the Job Autopilot Chrome extension",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch --env-file-if-exists=.env src/index.js",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.131.0",
+    "@supabase/supabase-js": "2.117.2",
+    "chart.js": "4.5.1",
+    "express": "5.2.1",
+    "multer": "2.4.0",
+    "unpdf": "1.8.1",
+    "zod": "4.6.5"
+  }
+}

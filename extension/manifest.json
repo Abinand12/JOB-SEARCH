@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Job Autopilot",
+  "version": "0.1.0",
+  "description": "Applies to jobs on LinkedIn and company career sites using your resume. Pauses for you when a site asks for human verification.",
+  "minimum_chrome_version": "114",
+  "permissions": ["storage", "tabs", "notifications"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Job Autopilot",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["https://www.linkedin.com/*"],
+      "js": ["content/dom.js", "content/captcha.js", "content/filler.js", "content/linkedin.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "exclude_matches": ["https://www.linkedin.com/*"],
+      "js": ["content/dom.js", "content/captcha.js", "content/filler.js", "content/ats.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Job Autopilot</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="popup">
+  <h1>Job Autopilot</h1>
+  <p id="status" class="secondary">Loading…</p>
+  <div id="today" class="today hidden"></div>
+  <div class="stack">
+    <button id="start" class="btn primary hidden" type="button">Start auto-apply on LinkedIn</button>
+    <button id="stop" class="btn hidden" type="button">Stop</button>
+    <button id="assist" class="btn hidden" type="button">Autofill this page</button>
+  </div>
+  <p id="error" class="error"></p>
+  <p class="links">
+    <a id="dashboard" href="#" target="_blank" rel="noopener">Open dashboard</a> ·
+    <a href="options.html" target="_blank">Settings</a>
+  </p>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

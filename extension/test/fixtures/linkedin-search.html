@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Jobs | LinkedIn (test double)</title>
+<style>
+  body { font: 14px system-ui; display: flex; gap: 24px; margin: 16px; }
+  .scaffold-layout__list { width: 320px; }
+  li { list-style: none; border: 1px solid #ddd; padding: 8px; margin: 4px 0; }
+  .artdeco-modal { position: fixed; inset: 40px; background: #fff; border: 1px solid #999; padding: 16px; z-index: 10; }
+  .artdeco-inline-feedback--error { color: #b00; }
+</style>
+</head>
+<body>
+  <!-- A small stand-in for LinkedIn's job search page, mirroring the selectors the bot uses. -->
+  <ul class="scaffold-layout__list">
+    <li data-occludable-job-id="101"><div class="job-card-container"><a class="job-card-list__title" href="/jobs/view/101/">Backend Engineer</a><div class="artdeco-entity-lockup__subtitle">Globex</div></div></li>
+    <li data-occludable-job-id="102"><div class="job-card-container"><a class="job-card-list__title" href="/jobs/view/102/">Data Engineer</a><div class="artdeco-entity-lockup__subtitle">Initech</div></div></li>
+    <li data-occludable-job-id="103"><div class="job-card-container"><a class="job-card-list__title" href="/jobs/view/103/">Software Engineering Intern</a><div class="artdeco-entity-lockup__subtitle">Hooli</div></div></li>
+  </ul>
+
+  <div class="jobs-details">
+    <div class="job-details-jobs-unified-top-card__container--two-pane">
+      <h1 class="job-details-jobs-unified-top-card__job-title"></h1>
+      <div class="job-details-jobs-unified-top-card__company-name"></div>
+      <div class="job-details-jobs-unified-top-card__primary-description-container">Bengaluru, Karnataka · 1 day ago</div>
+      <div id="applied-status"></div>
+      <div class="jobs-apply-button--top-card"><button class="jobs-apply-button" id="apply-btn"></button></div>
+    </div>
+    <div id="job-details"></div>
+  </div>
+
+  <script>
+    const JOBS = {
+      101: { title: 'Backend Engineer', company: 'Globex', easy: true, desc: 'Build payment APIs in Python on Kubernetes.' },
+      102: { title: 'Data Engineer', company: 'Initech', easy: false, desc: 'Pipelines in Spark.' },
+      103: { title: 'Software Engineering Intern', company: 'Hooli', easy: true, desc: 'Summer internship.' },
+    };
+    let current = null;
+    const $ = (s) => document.querySelector(s);
+
+    function showJob(id) {
+      current = id;
+      const job = JOBS[id];
+      history.pushState({}, '', `/jobs/search/?keywords=engineer&currentJobId=${id}`);
+      $('.job-details-jobs-unified-top-card__job-title').textContent = job.title;
+      $('.job-details-jobs-unified-top-card__company-name').textContent = job.company;
+      $('#job-details').textContent = job.desc;
+      $('#applied-status').textContent = job.applied ? 'Applied 1 minute ago' : '';
+      const btn = $('#apply-btn');
+      btn.textContent = job.easy ? 'Easy Apply' : 'Apply';
+      btn.setAttribute('aria-label', job.easy ? `Easy Apply to ${job.title} at ${job.company}` : `Apply to ${job.title} on company website`);
+    }
+
+    document.querySelectorAll('.job-card-list__title').forEach((a) =>
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        showJob(a.closest('li').dataset.occludableJobId);
+      }),
+    );
+
+    $('#apply-btn').addEventListener('click', () => {
+      const job = JOBS[current];
+      if (!job.easy) {
+        window.open(`${window.COMPANY_URL}?job=${current}`, '_blank');
+        return;
+      }
+      openModal(job);
+    });
+
+    function openModal(job) {
+      const modal = document.createElement('div');
+      modal.className = 'jobs-easy-apply-modal artdeco-modal';
+      modal.setAttribute('role', 'dialog');
+      document.body.append(modal);
+      let step = 0;
+      const steps = [
+        () => `<h2>Apply to ${job.company}</h2>
+          <label for="phone">Mobile phone number</label><input id="phone" required>
+          <label for="email-select">Email address</label><select id="email-select"><option>asha@example.com</option></select>
+          <div class="err"></div>
+          <footer><button aria-label="Dismiss">x</button><button class="artdeco-button--primary" aria-label="Continue to next step">Next</button></footer>`,
+        () => `<h2>Additional questions</h2>
+          <fieldset><legend><span aria-hidden="true">Are you comfortable commuting to this job's location?</span><span class="visually-hidden" style="position:absolute;clip:rect(0 0 0 0)">Are you comfortable commuting to this job's location?</span></legend>
+            <input type="radio" id="commute-yes" name="commute" value="Yes"><label for="commute-yes">Yes</label>
+            <input type="radio" id="commute-no" name="commute" value="No"><label for="commute-no">No</label></fieldset>
+          <label for="k8s">How many years of work experience do you have with Kubernetes?</label><input id="k8s" required>
+          <div class="err"></div>
+          <footer><button aria-label="Dismiss">x</button><button class="artdeco-button--primary" aria-label="Review your application">Review</button></footer>`,
+        () => `<h2>Review your application</h2>
+          <input type="checkbox" id="follow-company-checkbox" checked><label for="follow-company-checkbox">Follow ${job.company}</label>
+          <footer><button aria-label="Dismiss">x</button><button class="artdeco-button--primary" aria-label="Submit application">Submit application</button></footer>`,
+      ];
+      const answers = {};
+      function render() {
+        modal.innerHTML = steps[step]();
+        modal.querySelector('.artdeco-button--primary').addEventListener('click', next);
+      }
+      function next() {
+        const required = [...modal.querySelectorAll('input[required]')].filter((i) => !i.value);
+        const radio = modal.querySelector('input[type=radio]');
+        if (required.length || (radio && !modal.querySelector('input[type=radio]:checked'))) {
+          modal.querySelector('.err').innerHTML = '<div class="artdeco-inline-feedback--error" role="alert">Please enter a valid answer</div>';
+          return;
+        }
+        modal.querySelectorAll('input, select').forEach((i) => (answers[i.id] = i.type === 'checkbox' || i.type === 'radio' ? i.checked : i.value));
+        if (step < steps.length - 1) {
+          step += 1;
+          render();
+          return;
+        }
+        job.applied = true;
+        window.SUBMITTED = window.SUBMITTED || [];
+        window.SUBMITTED.push({ id: current, answers });
+        modal.innerHTML = `<h2>Application sent</h2><p>Your application was sent to ${job.company}</p><button>Done</button>`;
+        modal.querySelector('button').addEventListener('click', () => {
+          modal.remove();
+          showJob(current);
+        });
+      }
+      render();
+    }
+  </script>
+</body>
+</html>

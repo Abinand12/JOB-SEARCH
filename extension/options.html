@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Job Autopilot settings</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="options">
+  <h1>Connect Job Autopilot</h1>
+  <p class="secondary">In your dashboard, open <em>Bot settings</em> and create an extension token. Paste it here with the dashboard's address.</p>
+  <form id="form" class="stack">
+    <label>Dashboard address
+      <input id="serverUrl" type="url" placeholder="https://your-app.up.railway.app" required>
+    </label>
+    <label>Extension token
+      <input id="token" type="password" placeholder="jap_…" required autocomplete="off">
+    </label>
+    <div class="row">
+      <button class="btn primary" type="submit">Save &amp; test</button>
+      <span id="result" class="secondary"></span>
+    </div>
+  </form>
+  <h2>How it works</h2>
+  <ul class="secondary">
+    <li>Click <strong>Start auto-apply on LinkedIn</strong> in the toolbar popup. The bot searches with the keywords from your dashboard and applies job by job.</li>
+    <li>Jobs that send you to the company website open in a new tab and are filled in automatically.</li>
+    <li>If a site shows a CAPTCHA or asks you to sign in, the bot pauses, shows a notification here and an alert on the dashboard. Complete it in that tab and the bot continues.</li>
+    <li>On any other job site, open the application form and click <strong>Autofill this page</strong>.</li>
+  </ul>
+  <script src="options.js" type="module"></script>
+</body>
+</html>

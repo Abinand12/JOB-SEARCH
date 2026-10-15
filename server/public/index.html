@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Job Autopilot</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/vendor/supabase.js"></script>
+  <script src="/vendor/chart.js"></script>
+</head>
+<body>
+  <section id="auth" class="wrap hidden">
+    <div class="card auth-card">
+      <h2>Job Autopilot</h2>
+      <p class="secondary">Sign in to see your applications and connect the Chrome extension.</p>
+      <form id="auth-form" class="stack">
+        <label>Email <input type="email" name="email" required autocomplete="email"></label>
+        <label>Password <input type="password" name="password" required minlength="8" autocomplete="current-password"></label>
+        <div class="actions">
+          <button class="btn primary" type="submit" data-mode="signin">Sign in</button>
+          <button class="btn" type="submit" data-mode="signup">Create account</button>
+        </div>
+        <p id="auth-message" class="secondary"></p>
+      </form>
+    </div>
+  </section>
+
+  <div id="app" class="hidden">
+    <header class="top">
+      <div class="wrap">
+        <h1>Job Autopilot</h1>
+        <span id="model-badge" class="badge"></span>
+        <span class="spacer"></span>
+        <button id="notify-btn" class="btn small hidden" type="button">Enable desktop alerts</button>
+        <span id="user-email" class="muted"></span>
+        <button id="signout" class="btn small" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+        <button role="tab" data-tab="applications" aria-selected="false">Applications</button>
+        <button role="tab" data-tab="profile" aria-selected="false">Profile &amp; resume</button>
+        <button role="tab" data-tab="answers" aria-selected="false">Saved answers</button>
+        <button role="tab" data-tab="settings" aria-selected="false">Bot settings</button>
+      </nav>
+
+      <main>
+        <div id="alerts" class="alerts"></div>
+
+        <!-- Overview -->
+        <section data-panel="overview">
+          <div class="filters">
+            <span class="secondary">Range</span>
+            <div class="segmented" id="range">
+              <button type="button" data-days="7" aria-pressed="false">7 days</button>
+              <button type="button" data-days="30" aria-pressed="true">30 days</button>
+              <button type="button" data-days="90" aria-pressed="false">90 days</button>
+            </div>
+          </div>
+          <div class="kpis" id="kpis"></div>
+
+          <div class="card">
+            <header><h2>Applications submitted per day</h2><p class="muted">by how the bot applied</p></header>
+            <div class="chart-box"><canvas id="chart-daily" aria-label="Applications submitted per day, stacked by method" role="img"></canvas></div>
+            <details class="table-view"><summary>Show as table</summary><div class="table-scroll" id="table-daily"></div></details>
+          </div>
+
+          <div class="grid two">
+            <div class="card">
+              <header><h2>Outcome</h2><p class="muted">every job the bot touched</p></header>
+              <div class="chart-box short"><canvas id="chart-status" aria-label="Applications by status" role="img"></canvas></div>
+              <details class="table-view"><summary>Show as table</summary><div id="table-status"></div></details>
+            </div>
+            <div class="card">
+              <header><h2>Where you applied</h2><p class="muted">submitted, by hiring platform</p></header>
+              <div class="chart-box short"><canvas id="chart-ats" aria-label="Submitted applications by hiring platform" role="img"></canvas></div>
+              <details class="table-view"><summary>Show as table</summary><div id="table-ats"></div></details>
+            </div>
+          </div>
+
+          <div class="grid two">
+            <div class="card">
+              <header><h2>Top companies</h2></header>
+              <div id="top-companies"></div>
+            </div>
+            <div class="card">
+              <header><h2>AI usage</h2></header>
+              <div id="llm-usage"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Applications -->
+        <section data-panel="applications" class="hidden">
+          <div class="filters">
+            <input id="app-search" type="search" placeholder="Search title or company">
+            <select id="app-status"><option value="">All statuses</option></select>
+            <select id="app-method"><option value="">All methods</option></select>
+          </div>
+          <div class="card">
+            <div class="table-scroll"><table id="app-table"></table></div>
+            <div class="actions">
+              <button class="btn small" id="app-prev" type="button">Previous</button>
+              <span id="app-page" class="muted"></span>
+              <button class="btn small" id="app-next" type="button">Next</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Profile -->
+        <section data-panel="profile" class="hidden">
+          <div class="card">
+            <header><h2>Resume</h2><p class="muted" id="resume-current"></p></header>
+            <p class="secondary">Upload a text-based PDF. The AI reads it once and fills in the profile below. Review the result: the bot answers forms from this profile.</p>
+            <div class="actions">
+              <input type="file" id="resume-file" accept="application/pdf,.pdf">
+              <button class="btn primary" id="resume-upload" type="button">Upload &amp; parse</button>
+              <span id="resume-status" class="secondary"></span>
+            </div>
+          </div>
+          <form id="profile-form">
+            <div class="card">
+              <header><h2>Personal details</h2></header>
+              <div class="form-grid" id="personal-fields"></div>
+            </div>
+            <div class="card">
+              <header><h2>Application answers</h2><p class="muted">The bot answers these questions from what you set here. Salary, date of birth, address and EEO answers are never guessed by the AI.</p></header>
+              <div class="form-grid" id="preference-fields"></div>
+            </div>
+            <div class="card">
+              <header><h2>Experience, skills &amp; education</h2><p class="muted">Parsed from your resume. Edit the JSON if something is wrong.</p></header>
+              <div class="form-grid" id="career-fields"></div>
+              <label class="stack" style="margin-top:12px">Details (JSON)
+                <textarea class="code" id="career-json" spellcheck="false"></textarea>
+              </label>
+            </div>
+            <div class="actions">
+              <button class="btn primary" type="submit">Save profile</button>
+              <span id="profile-status" class="secondary"></span>
+            </div>
+          </form>
+        </section>
+
+        <!-- Saved answers -->
+        <section data-panel="answers" class="hidden">
+          <div class="card">
+            <header><h2>Saved answers</h2><p class="muted">The AI's answers to screening questions are reused on later applications. Correct any that are wrong. Your edits always win.</p></header>
+            <div class="filters"><input id="answer-search" type="search" placeholder="Search questions"></div>
+            <div class="table-scroll"><table id="answer-table"></table></div>
+          </div>
+        </section>
+
+        <!-- Settings -->
+        <section data-panel="settings" class="hidden">
+          <form id="settings-form" class="card">
+            <header><h2>Bot settings</h2></header>
+            <div class="form-grid" id="settings-fields"></div>
+            <div class="actions">
+              <button class="btn primary" type="submit">Save settings</button>
+              <span id="settings-status" class="secondary"></span>
+            </div>
+          </form>
+          <div class="card">
+            <header><h2>Connect the Chrome extension</h2></header>
+            <ol class="secondary">
+              <li>Open <code>chrome://extensions</code>, turn on Developer mode, click <em>Load unpacked</em> and pick the <code>extension</code> folder from this repo.</li>
+              <li>Create a token below and paste it, together with this site's address (<code id="server-url"></code>), into the extension's options.</li>
+            </ol>
+            <div class="actions">
+              <button class="btn primary" id="token-create" type="button">Create extension token</button>
+            </div>
+            <div id="token-new" class="hidden" style="margin-top:12px">
+              <p class="secondary">Copy it now. It will not be shown again.</p>
+              <div class="token-box" id="token-value"></div>
+              <div class="actions"><button class="btn small" id="token-copy" type="button">Copy</button></div>
+            </div>
+            <div class="table-scroll" style="margin-top:12px"><table id="token-table"></table></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
