@@ -54,13 +54,15 @@ Hosting: Supabase's free plan covers this app. Railway bills by usage on a small
 ### 1. Supabase
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Open **SQL Editor**, paste [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) and run it. This creates the tables, row-level security, Realtime publication and a private `resumes` storage bucket.
-3. **Project Settings → API**: copy the project URL, the `anon` key and the `service_role` key. Keep the service role key secret; it only goes into Railway.
+2. **Project Settings → API Keys**: copy the project URL, the publishable key (`sb_publishable_…` or the legacy `anon` key) and the secret key (`sb_secret_…` or the legacy `service_role` key). Keep the secret key secret; it only goes into Railway.
+3. **Connect → Connection string → Session pooler**: copy the URL (port 5432) and your database password. Railway uses them to create the tables for you on every deploy (see below). The direct `db.<ref>.supabase.co` address needs IPv6, which Railway doesn't have, so use the session pooler.
 
 ### 2. Railway
 
 1. **New Project → Deploy from GitHub repo** and pick this repo. Railway uses the `Dockerfile` and `railway.json` (health check `/api/health`).
-2. Under **Variables**, add the values from [`server/.env.example`](server/.env.example): `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, plus one AI key (`GEMINI_API_KEY`, `GROQ_API_KEY` or `ANTHROPIC_API_KEY`).
+2. Under **Variables**, add the values from [`server/.env.example`](server/.env.example): `SUPABASE_URL`, `SUPABASE_ANON_KEY` (publishable key), `SUPABASE_SERVICE_ROLE_KEY` (secret key), `DATABASE_URL` + `DATABASE_PASSWORD`, plus one AI key (`GEMINI_API_KEY`, `GROQ_API_KEY` or `ANTHROPIC_API_KEY`).
+   - **The database sets itself up.** Before each deploy Railway runs `node src/migrate.js` (the `preDeployCommand` in `railway.json`). It applies every file in [`supabase/migrations/`](supabase/migrations) that hasn't run yet: tables, row-level security, Realtime and the private `resumes` storage bucket. It records what ran in `app_private.schema_migrations`. If a migration fails, the deploy stops and the previous version keeps running; the error is in the deploy logs.
+   - Without `DATABASE_URL` the step is skipped. Then run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) once in Supabase's **SQL Editor** instead. It is safe to run both ways.
 3. **Settings → Networking → Generate Domain**.
 4. Back in Supabase, set **Authentication → URL Configuration → Site URL** to that domain so email confirmation links come back to your dashboard.
 
@@ -105,6 +107,7 @@ The extension never tries to solve or bypass a challenge.
 cd server
 cp .env.example .env      # fill in Supabase + one AI key
 npm install
+npm run migrate           # create/update the database tables (needs DATABASE_URL)
 npm run dev               # http://localhost:3000
 npm test                  # unit tests: answer engine, option matching, stats, LLM clients
 ```
@@ -128,7 +131,7 @@ npm test
 ## Project layout
 
 ```
-supabase/migrations/0001_init.sql   tables, RLS, realtime, storage bucket
+supabase/migrations/0001_init.sql   tables, RLS, realtime, storage bucket (applied by server/src/migrate.js)
 server/
   src/index.js                      Express app (API + dashboard)
   src/answers.js                    rules → saved → batched LLM answer engine

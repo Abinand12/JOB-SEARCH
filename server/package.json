@@ -11,7 +11,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch --env-file-if-exists=.env src/index.js",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "migrate": "node --env-file-if-exists=.env src/migrate.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",
@@ -19,6 +20,7 @@
     "chart.js": "4.5.1",
     "express": "5.2.1",
     "multer": "2.4.0",
+    "pg": "8.23.1",
     "unpdf": "1.8.1",
     "zod": "4.6.5"
   }
