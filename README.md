@@ -59,9 +59,14 @@ Hosting: Supabase's free plan covers this app. Railway bills by usage on a small
 
 ### 2. Railway
 
-1. **New Project → Deploy from GitHub repo** and pick this repo. Railway uses the `Dockerfile` and `railway.json` (health check `/api/health`).
+1. **New Project → Deploy from GitHub repo** and pick this repo. In the service's **Settings**, set:
+   - **Build → Dockerfile path:** `Dockerfile` (the app lives in `server/`, so Railway's auto-detect builder can't find it)
+   - **Deploy → Pre-deploy command:** `node src/migrate.js` (sets up the database, see below)
+   - **Deploy → Healthcheck path:** `/api/health`
+
+   Railway no longer reads `railway.json` for new services, so these live in the service settings.
 2. Under **Variables**, add the values from [`server/.env.example`](server/.env.example): `SUPABASE_URL`, `SUPABASE_ANON_KEY` (publishable key), `SUPABASE_SERVICE_ROLE_KEY` (secret key), `DATABASE_URL` + `DATABASE_PASSWORD`, plus one AI key (`GEMINI_API_KEY`, `GROQ_API_KEY` or `ANTHROPIC_API_KEY`).
-   - **The database sets itself up.** Before each deploy Railway runs `node src/migrate.js` (the `preDeployCommand` in `railway.json`). It applies every file in [`supabase/migrations/`](supabase/migrations) that hasn't run yet: tables, row-level security, Realtime and the private `resumes` storage bucket. It records what ran in `app_private.schema_migrations`. If a migration fails, the deploy stops and the previous version keeps running; the error is in the deploy logs.
+   - **The database sets itself up.** Before each deploy Railway runs `node src/migrate.js` (the pre-deploy command). It applies every file in [`supabase/migrations/`](supabase/migrations) that hasn't run yet: tables, row-level security, Realtime and the private `resumes` storage bucket. It records what ran in `app_private.schema_migrations`. If a migration fails, the deploy stops and the previous version keeps running; the error is in the deploy logs.
    - Without `DATABASE_URL` the step is skipped. Then run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) once in Supabase's **SQL Editor** instead. It is safe to run both ways.
 3. **Settings → Networking → Generate Domain**.
 4. Back in Supabase, set **Authentication → URL Configuration → Site URL** to that domain so email confirmation links come back to your dashboard.
@@ -149,5 +154,5 @@ extension/
   content/ats.js                    company-site form driver
   popup.*, options.*                toolbar popup and connection settings
   test/                             Playwright end-to-end test + fixtures
-Dockerfile, railway.json            Railway deployment
+Dockerfile                          Railway deployment (see Setup → Railway for the service settings)
 ```
