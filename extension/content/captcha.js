@@ -19,7 +19,10 @@
   const DETECTORS = [
     {
       kind: 'linkedin_checkpoint',
-      test: () => /(^|\.)linkedin\.com$/.test(location.hostname) && /^\/checkpoint\//.test(location.pathname),
+      test: () =>
+        JA.onLinkedIn &&
+        (/^\/(checkpoint|authwall)\b/.test(location.pathname) ||
+          all('iframe[src*="captchaInternal"], iframe[src*="px-captcha"], #px-captcha, iframe[src*="protechts.net"][src*="captcha"]').some(onScreen)),
     },
     {
       kind: 'cloudflare',

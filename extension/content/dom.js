@@ -4,6 +4,23 @@
   const JA = (globalThis.JA = globalThis.JA || {});
   JA.ready = true;
 
+  JA.onLinkedIn = /(^|\.)linkedin\.com$/.test(location.hostname);
+
+  // LinkedIn sometimes renders the Easy Apply dialog inside the open shadow root of
+  // #interop-outlet (possibly nested). These helpers search the page and those roots.
+  JA.roots = () => {
+    const roots = [document];
+    const hosts = [...document.querySelectorAll('#interop-outlet, [data-testid="interop-shadowdom"]')];
+    for (let i = 0; i < hosts.length && i < 20; i++) {
+      const sr = hosts[i].shadowRoot;
+      if (!sr || roots.includes(sr)) continue;
+      roots.push(sr);
+      for (const el of sr.querySelectorAll('*')) if (el.shadowRoot) hosts.push(el);
+    }
+    return roots;
+  };
+  JA.queryAllDeep = (selector) => JA.roots().flatMap((r) => [...r.querySelectorAll(selector)]);
+
   JA.sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   JA.jitter = (minSec = 2, maxSec = 5) => JA.sleep((minSec + Math.random() * Math.max(0, maxSec - minSec)) * 1000);
 
@@ -108,6 +125,12 @@
     };
     return {
       show(text, { tone = 'info', actions = [] } = {}) {
+        // Never inject anything into LinkedIn pages (its terms forbid modifying the
+        // page, and it scans the DOM for extensions); report status to the popup instead.
+        if (JA.onLinkedIn) {
+          JA.send({ type: 'status:update', text, tone }).catch(() => {});
+          return;
+        }
         ensure();
         box.dataset.tone = tone;
         box.querySelector('.msg').textContent = text;

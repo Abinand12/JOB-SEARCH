@@ -17,6 +17,15 @@ async function refresh() {
   $('status').textContent = s.running ? 'Running on LinkedIn.' : s.name ? `Ready, ${s.name.split(' ')[0]}.` : 'Ready.';
   $('today').textContent = `${s.submitted_today} / ${s.settings.daily_limit} applications today`;
   show('today');
+  if (s.botStatus?.text) {
+    $('bot-status').textContent = s.botStatus.text;
+    $('bot-status').className = `bot-status ${s.botStatus.tone ?? ''}`;
+  }
+  if (s.cooldownUntil) {
+    $('bot-status').textContent = `${s.botStatus?.text ?? 'LinkedIn asked to slow down.'} Next start allowed after ${new Date(s.cooldownUntil).toLocaleString()}.`;
+    $('bot-status').className = 'bot-status warning';
+  }
+  show('bot-status', Boolean(s.botStatus?.text || s.cooldownUntil));
   if (!s.has_resume) $('error').textContent = 'Upload your resume in the dashboard before starting.';
   show('start', !s.running && s.has_resume);
   show('stop', s.running);

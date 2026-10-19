@@ -28,7 +28,9 @@ export const DEFAULT_PREFERENCES = {
 };
 
 export const DEFAULT_SETTINGS = {
-  daily_limit: 40,
+  // LinkedIn reportedly caps Easy Apply around 50 a day and throttles fast applying;
+  // stay well below that with human-scale pauses between applications.
+  daily_limit: 15,
   search_keywords: '',
   search_location: '',
   easy_apply_only: false,
@@ -39,8 +41,8 @@ export const DEFAULT_SETTINGS = {
   title_include: [],
   title_exclude: [],
   company_blacklist: [],
-  min_delay_sec: 3,
-  max_delay_sec: 8,
+  min_delay_sec: 60,
+  max_delay_sec: 180,
 };
 
 export const EMPTY_PROFILE = {

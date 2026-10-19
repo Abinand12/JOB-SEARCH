@@ -36,3 +36,5 @@ a { color: var(--accent); }
 .report li.ok .mark { color: #0ca30c; }
 .report li.fail .mark { color: var(--error); }
 .report li.optional { color: var(--secondary); }
+.bot-status { margin: 4px 0; padding: 6px 8px; border-radius: 6px; background: rgba(42,120,214,.08); font-size: 13px; }
+.bot-status.warning, .bot-status.error { background: rgba(250,178,25,.18); }

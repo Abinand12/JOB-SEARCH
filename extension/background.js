@@ -8,6 +8,7 @@ const SESSION_DEFAULTS = {
   pendingExternal: null, // { fromTabId, applicationId, job, at }
   atsTabs: {}, // tabId -> { mode, applicationId, job, originTabId, done }
   alertsByTab: {}, // tabId -> alertId
+  status: null, // { text, tone, at } latest bot status, shown in the popup
 };
 
 async function getState() {
@@ -121,6 +122,11 @@ function linkedinSearchUrl(settings) {
 }
 
 async function startLinkedIn() {
+  const { cooldownUntil = 0, cooldownReason = '' } = await chrome.storage.local.get(['cooldownUntil', 'cooldownReason']);
+  if (Date.now() < cooldownUntil) {
+    const until = new Date(cooldownUntil).toLocaleString();
+    throw new Error(`${cooldownReason} You can start again after ${until}.`);
+  }
   const session = await getSession();
   if (!session.has_resume) throw new Error('Upload your resume in the dashboard first.');
   const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -159,15 +165,30 @@ const handlers = {
     sessionCache = null;
     try {
       const session = await getSession();
-      return { configured: true, running: state.running, dashboardUrl: config.serverUrl, ...session };
+      const { cooldownUntil = 0 } = await chrome.storage.local.get('cooldownUntil');
+      return {
+        configured: true,
+        running: state.running,
+        botStatus: state.status,
+        cooldownUntil: cooldownUntil > Date.now() ? cooldownUntil : null,
+        dashboardUrl: config.serverUrl,
+        ...session,
+      };
     } catch (error) {
       return { configured: true, error: error.message, dashboardUrl: config.serverUrl };
     }
   },
   'linkedin:start': () => startLinkedIn(),
   'linkedin:stop': () => stopLinkedIn(),
+  'status:update': async (msg) => {
+    await setState({ status: { text: String(msg.text ?? '').slice(0, 300), tone: msg.tone ?? 'info', at: Date.now() } });
+    return { ok: true };
+  },
   'linkedin:finished': async (msg) => {
-    await setState({ running: false });
+    if (msg.cooldownHours > 0) {
+      await chrome.storage.local.set({ cooldownUntil: Date.now() + msg.cooldownHours * 3_600_000, cooldownReason: msg.reason });
+    }
+    await setState({ running: false, status: { text: msg.reason, tone: msg.cooldownHours ? 'error' : 'info', at: Date.now() } });
     await refreshBadge();
     notify(`done:${Date.now()}`, 'Job Autopilot stopped', msg.reason || 'Run finished');
     return { ok: true };

@@ -384,7 +384,7 @@ const RULES = [
   },
   {
     key: 'marketing_opt_in',
-    test: /text message|\bsms\b|whatsapp (updates|messages)|marketing|newsletter|job alerts|talent (community|network|pool)/,
+    test: /text message|\bsms\b|whatsapp (updates|messages)|marketing|newsletter|job alerts|talent (community|network|pool)|^follow\b/,
     types: BOOLEAN_TYPES,
     value: () => false,
   },

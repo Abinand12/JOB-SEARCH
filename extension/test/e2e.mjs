@@ -29,7 +29,7 @@ const profile = {
 const settings = {
   daily_limit: 10, search_keywords: 'engineer', search_location: '', easy_apply_only: false, apply_external: true,
   auto_submit_easy_apply: true, auto_submit_external: true, auto_accept_consent: true,
-  title_include: [], title_exclude: ['intern'], company_blacklist: [], min_delay_sec: 0.2, max_delay_sec: 0.4,
+  title_include: [], title_exclude: ['intern'], company_blacklist: [], min_delay_sec: 0.2, max_delay_sec: 0.4, min_gap_override: 0,
 };
 const fakeLlm = {
   async generateJson({ user }) {
@@ -238,7 +238,53 @@ await scenario('LinkedIn: Easy Apply, external apply, title filter', async () =>
   const inModal = Object.fromEntries((await diagnose()).checks.map((c) => [c.key, c]));
   assert.equal(inModal.modal.ok, true);
   assert.match(inModal.fields.detail, /Mobile phone number/);
-  assert.equal(inModal.next.detail, 'Continue to next step');
+  assert.match(inModal.next.detail, /^next:/);
+});
+
+await scenario('LinkedIn new design: safety reminder, native dialog, Yes/No questions, daily limit stop', async () => {
+  await context.unroute('https://www.linkedin.com/**');
+  await context.route('https://www.linkedin.com/**', (route) => route.fulfill({ contentType: 'text/html', body: fixture('linkedin-search-new.html') }));
+  await worker.evaluate(() => chrome.storage.local.remove(['cooldownUntil', 'cooldownReason', 'seenJobs']));
+  const before = log.applications.length;
+  const page = await context.newPage();
+  await page.goto('about:blank');
+  const tabId = await worker.evaluate(async () => (await chrome.tabs.query({ url: 'about:blank' }))[0].id);
+  await worker.evaluate(({ tabId }) => chrome.storage.session.set({ running: true, linkedinTabId: tabId, status: null }), { tabId });
+  await page.goto('https://www.linkedin.com/jobs/search-results/?keywords=engineer');
+
+  await waitUntil(() => worker.evaluate(async () => !(await chrome.storage.session.get('running')).running), 'run stopped', 90_000);
+
+  const created = log.applications.slice(before);
+  const first = created.find((a) => a.job_title === 'Platform Engineer');
+  assert.ok(first, `applications: ${JSON.stringify(created)}`);
+  assert.equal(first.company, 'Globex');
+  assert.equal(first.job_url, 'https://www.linkedin.com/jobs/view/201/');
+  assert.ok(log.patches.some((p) => p.id === first.id && p.status === 'submitted'), 'first job submitted');
+  const sent = (await page.evaluate(() => window.SUBMITTED)).find((s) => s.id === '201');
+  assert.equal(sent.answers.phone, '+91 98765 43210');
+  assert.equal(sent.answers.sponsorship, 'No');
+  assert.equal(sent.answers.k8s, '0');
+  assert.equal(sent.answers.follow, false, 'unfollows the company');
+
+  // Second job hits LinkedIn's daily limit: the run stops with a 24 h cooldown.
+  const second = created.find((a) => a.job_title === 'Site Reliability Engineer');
+  assert.ok(log.patches.some((p) => p.id === second.id && p.status === 'skipped'), 'second job marked skipped');
+  const { cooldownUntil, cooldownReason } = await worker.evaluate(() => chrome.storage.local.get(['cooldownUntil', 'cooldownReason']));
+  assert.ok(cooldownUntil > Date.now() + 23 * 3_600_000, 'cooldown of about 24 h');
+  assert.match(cooldownReason, /Easy Apply limit/);
+  const { status } = await worker.evaluate(() => chrome.storage.session.get('status'));
+  assert.match(status.text, /Easy Apply limit/);
+
+  // Nothing was injected into the LinkedIn page.
+  assert.equal(await page.evaluate(() => Boolean(document.getElementById('job-autopilot-panel'))), false);
+
+  // Self-check on the new design.
+  const report = await worker.evaluate((id) => chrome.tabs.sendMessage(id, { type: 'linkedin:diagnose' }), tabId);
+  const byKey = Object.fromEntries(report.checks.map((c) => [c.key, c]));
+  assert.equal(byKey.design.detail, 'new design');
+  assert.match(byKey.cards.detail, /^2 found/);
+  assert.match(byKey.card_text.detail, /^Platform Engineer · Globex$/);
+  assert.match(byKey.apply.detail, /^Easy Apply/);
 });
 
 await context.close();

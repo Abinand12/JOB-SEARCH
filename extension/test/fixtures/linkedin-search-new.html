@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Jobs | LinkedIn (test double, new design)</title>
+<style>
+  body { font: 14px system-ui; display: flex; gap: 24px; margin: 16px; }
+  [data-testid="lazy-column"] { width: 320px; }
+  [role="button"][componentkey] { border: 1px solid #ddd; padding: 8px; margin: 4px 0; cursor: pointer; }
+  dialog { width: 520px; }
+  input[type="radio"] { width: 1px; height: 1px; opacity: 0; }
+</style>
+</head>
+<body>
+  <!-- Stand-in for LinkedIn's 2026 redesign (/jobs/search-results/): hashed classes are
+       omitted; only the structure and attributes the bot relies on are reproduced. -->
+  <main>
+    <div data-testid="lazy-column" id="results"></div>
+    <div data-testid="lazy-column" id="detail"></div>
+    <div data-testid="pagination-controls-list"></div>
+  </main>
+
+  <script>
+    const JOBS = {
+      201: { title: 'Platform Engineer', company: 'Globex', place: 'Bengaluru, Karnataka, India (Hybrid)', easy: true },
+      202: { title: 'Site Reliability Engineer', company: 'Initech', place: 'Remote', easy: true, limit: true },
+    };
+    window.SUBMITTED = [];
+    const $ = (s) => document.querySelector(s);
+
+    for (const [id, job] of Object.entries(JOBS)) {
+      const card = document.createElement('div');
+      card.setAttribute('role', 'button');
+      card.tabIndex = 0;
+      card.setAttribute('componentkey', `job-card-component-ref-${id}`);
+      card.innerHTML = `<div componentkey="job-card-component-ref-${id}"><div><div>
+          <div data-display-contents="true"><p><span aria-hidden="true">${job.title}</span></p></div>
+          <div><p>${job.company}</p></div><p>${job.place}</p></div>
+          <div><button type="button" aria-label="Dismiss ${job.title} job"><span>x</span></button></div></div>
+          <div><div><p><span>Posted 1 day ago</span><span aria-hidden="true">1 day ago</span></p><p> · </p><div><p>Easy Apply</p></div></div></div></div>`;
+      card.addEventListener('click', () => showJob(id));
+      $('#results').append(card);
+    }
+
+    let current = null;
+    function showJob(id) {
+      current = id;
+      const job = JOBS[id];
+      history.pushState({}, '', `/jobs/search-results/?keywords=engineer&currentJobId=${id}`);
+      $('#detail').innerHTML = `<div data-sdui-component="com.linkedin.sdui.generated.jobseeker.JobDetailsTopCard">
+          <h1>${job.title}</h1><p>${job.company}</p>
+          <button type="button" aria-label="Easy Apply to this job"><span><span>Easy Apply</span></span></button></div>
+        <h2>About the job</h2><div data-testid="expandable-text-box">Run Kubernetes platforms for ${job.company}.</div>
+        <h2>More jobs</h2><div><button type="button" aria-label="Easy Apply to this job">Easy Apply</button></div>`;
+      $('#detail button[aria-label="Easy Apply to this job"]').addEventListener('click', () => (job.limit ? showLimit() : showSafety()));
+    }
+
+    function plainDialog(html) {
+      const d = document.createElement('dialog');
+      d.innerHTML = html;
+      document.body.append(d);
+      d.show();
+      return d;
+    }
+
+    function showLimit() {
+      plainDialog(`<h2>You've reached today's Easy Apply limit</h2><p>Great effort applying today. Save this job and continue applying tomorrow.</p><button type="button">Got it</button>`);
+    }
+
+    function showSafety() {
+      const d = plainDialog(`<h2>Job search safety reminder</h2><p>Be careful of job scams.</p><a href="#">Continue applying</a>`);
+      d.querySelector('a').addEventListener('click', (e) => {
+        e.preventDefault();
+        d.remove();
+        openApply();
+      });
+    }
+
+    function radioGroup(question, name) {
+      return `<p>${question}*</p><fieldset aria-describedby="error-message-${name}" role="radiogroup"><div>
+        ${['Yes', 'No']
+          .map(
+            (o, i) => `<div role="radio" tabindex="0" aria-label="${question}" aria-checked="false"><div><div>
+              <input id="${name}-${i}" type="radio" name="radio-group-${name}"><label for="${name}-${i}"></label></div>
+              <div><p>${o}</p></div></div></div>`,
+          )
+          .join('')}</div></fieldset>`;
+    }
+
+    function openApply() {
+      const job = JOBS[current];
+      const d = document.createElement('dialog');
+      d.setAttribute('data-testid', 'dialog');
+      d.innerHTML = `<button type="button" aria-label="Dismiss">x</button><div><header id="dialog-header"><h2>Apply to ${job.company}</h2></header>
+        <div data-testid="dialog-content"><div data-sdui-screen="com.linkedin.sdui.flagshipnav.jobs.easyapply.EasyApply"><div id="step"></div></div>
+        <footer id="footer"></footer></div>`;
+      document.body.append(d);
+      d.show();
+      const answers = {};
+      let step = 0;
+      const steps = [
+        () => ({
+          html: `<p>Contact info</p><div componentkey="easyApplyFieldFocus_phone"><p>Mobile phone number*</p>
+            <input required id="phone" aria-label="Mobile phone number" type="text" value=""></div>`,
+          buttons: ['Next'],
+        }),
+        () => ({
+          html: `<p>Additional Questions</p><div componentkey="easyApplyFieldFocus_q1">${radioGroup('Will you now or in the future require visa sponsorship?', 'q1')}</div>
+            <div componentkey="easyApplyFieldFocus_q2"><p>How many years of work experience do you have with Kubernetes?*</p>
+            <input required id="k8s" aria-describedby="k8s-info" aria-label="How many years of work experience do you have with Kubernetes?" type="text" value="">
+            <div data-testid="text-input-helper-text" id="k8s-info"><p aria-live="polite"><span>0 of 3 characters</span></p></div></div>`,
+          buttons: ['Back', 'Review'],
+        }),
+        () => ({
+          html: `<p>Review your application</p><div role="checkbox" tabindex="0" aria-checked="true" aria-label="Follow ${job.company} to stay up to date with their page.">
+            <input type="checkbox" checked style="width:0;height:0"><p>Follow ${job.company} to stay up to date with their page.</p></div>`,
+          buttons: ['Back', 'Submit application'],
+        }),
+      ];
+
+      function render() {
+        const s = steps[step]();
+        d.querySelector('#step').innerHTML = s.html;
+        d.querySelector('#footer').innerHTML = s.buttons.map((b) => `<button type="button"><span><span>${b}</span></span></button>`).join('');
+        d.querySelectorAll('[role="radio"]').forEach((r) =>
+          r.addEventListener('click', () => {
+            r.closest('fieldset').querySelectorAll('[role="radio"]').forEach((o) => {
+              o.setAttribute('aria-checked', String(o === r));
+              o.querySelector('input').checked = o === r;
+            });
+          }),
+        );
+        d.querySelectorAll('[role="checkbox"]').forEach((c) =>
+          c.addEventListener('click', () => c.setAttribute('aria-checked', String(c.getAttribute('aria-checked') !== 'true'))),
+        );
+        d.querySelectorAll('#footer button').forEach((b) => b.addEventListener('click', () => onButton(b.textContent.trim())));
+      }
+
+      function onButton(label) {
+        if (label === 'Back') return;
+        const missing = [...d.querySelectorAll('#step input[required]')].filter((i) => !i.value);
+        const unanswered = [...d.querySelectorAll('#step fieldset')].filter((f) => !f.querySelector('[aria-checked="true"]'));
+        if (missing.length || unanswered.length) {
+          if (!d.querySelector('#error-message-q1')) d.querySelector('#step').insertAdjacentHTML('beforeend', '<p id="error-message-q1">Please make a selection</p>');
+          return;
+        }
+        d.querySelectorAll('#step input[type="text"]').forEach((i) => (answers[i.id] = i.value));
+        d.querySelectorAll('#step fieldset').forEach((f) => (answers.sponsorship = f.querySelector('[aria-checked="true"] p').textContent));
+        d.querySelectorAll('#step [role="checkbox"]').forEach((c) => (answers.follow = c.getAttribute('aria-checked') === 'true'));
+        if (label === 'Submit application') {
+          window.SUBMITTED.push({ id: current, answers });
+          d.remove();
+          const done = plainDialog(`<h2>Application sent</h2><p>Your application was sent to ${job.company}!</p><button type="button">Done</button>`);
+          done.querySelector('button').addEventListener('click', () => done.remove());
+          return;
+        }
+        step += 1;
+        render();
+      }
+      render();
+    }
+  </script>
+</body>
+</html>

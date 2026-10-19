@@ -15,17 +15,30 @@
 
   const labelText = (el) => (el ? clean(JA.text(el)) : '');
 
+  // Lookups go through the element's own root so they also work inside shadow roots.
+  const rootOf = (el) => el.getRootNode?.() ?? el.ownerDocument;
+  const byId = (el, id) => (id ? rootOf(el).getElementById?.(id) ?? el.ownerDocument.getElementById(id) : null);
+
   function forLabel(el) {
     if (!el.id) return null;
-    return el.ownerDocument.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+    return rootOf(el).querySelector(`label[for="${CSS.escape(el.id)}"]`);
   }
+
+  // LinkedIn's new Easy Apply wraps each choice in [role=radio]/[role=checkbox] with
+  // an empty <label> and the option text in a <p>; state lives in aria-checked.
+  const choiceWrapper = (input) => input.closest('[role="radio"], [role="checkbox"], [role="option"], [role="switch"]');
+  const isChecked = (input) => {
+    const wrap = choiceWrapper(input);
+    if (wrap?.hasAttribute('aria-checked')) return wrap.getAttribute('aria-checked') === 'true';
+    return input.checked;
+  };
 
   function labelFor(el) {
     const ids = el.getAttribute('aria-labelledby');
     if (ids) {
       const t = ids
         .split(/\s+/)
-        .map((id) => labelText(el.ownerDocument.getElementById(id)))
+        .map((id) => labelText(byId(el, id)))
         .filter(Boolean)
         .join(' ');
       if (t) return t;
@@ -61,20 +74,39 @@
 
   const humanize = (name) => (name ? name.replace(/[_\-[\]]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim() : '');
 
-  function groupLabel(inputs) {
+  // Returns the question text, unstripped, so a trailing "*" can mark it required.
+  function groupLabelRaw(inputs) {
     const first = inputs[0];
     const fieldset = first.closest('fieldset');
     if (fieldset) {
       const legend = fieldset.querySelector('legend');
-      const t = labelText(legend) || fieldset.getAttribute('aria-label');
-      if (t) return clean(t);
+      const t = (legend ? JA.text(legend) : '') || fieldset.getAttribute('aria-label');
+      if (t) return t;
     }
-    const group = first.closest('[role="radiogroup"], [role="group"]');
+    const group = first.closest('[role="radiogroup"], [role="group"], fieldset');
     if (group) {
       const ids = group.getAttribute('aria-labelledby');
-      const t = ids ? labelText(group.ownerDocument.getElementById(ids.split(/\s+/)[0])) : group.getAttribute('aria-label');
-      if (t) return clean(t);
+      const t = ids ? JA.text(byId(group, ids.split(/\s+/)[0])) : group.getAttribute('aria-label');
+      if (t) return t;
+      // New LinkedIn: the question is a <p> right before the group.
+      const prev = group.previousElementSibling;
+      if (prev && !prev.querySelector('input, select, textarea')) {
+        const pt = JA.text(prev);
+        if (pt) return pt;
+      }
     }
+    // ...or the aria-label every option wrapper carries.
+    const wrapLabel = choiceWrapper(first)?.getAttribute('aria-label');
+    if (wrapLabel && !inputs.some((i) => optionLabel(i) === wrapLabel.trim())) return wrapLabel;
+    return groupLabelFallback(inputs);
+  }
+
+  function groupLabel(inputs) {
+    return clean(groupLabelRaw(inputs));
+  }
+
+  function groupLabelFallback(inputs) {
+    const first = inputs[0];
     // Nearest ancestor containing every option, then the question text inside it.
     let node = first.parentElement;
     while (node && !inputs.every((i) => node.contains(i))) node = node.parentElement;
@@ -87,7 +119,13 @@
 
   function optionLabel(input) {
     const t = labelText(forLabel(input)) || labelText(input.closest('label'));
-    return t || input.value;
+    if (t) return t;
+    const wrap = choiceWrapper(input);
+    if (wrap) {
+      const wt = labelText(wrap);
+      if (wt) return wt;
+    }
+    return input.value && input.value !== 'on' ? input.value : input.getAttribute('aria-label') || '';
   }
 
   const isRequired = (el, label) =>
@@ -96,8 +134,19 @@
   const PLACEHOLDER = /^(select|choose|please select|please choose|--|—|-)\b|^$/i;
 
   function choiceVisible(input) {
-    return JA.visible(input) || JA.visible(forLabel(input)) || JA.visible(input.closest('label'));
+    return JA.visible(input) || JA.visible(forLabel(input)) || JA.visible(input.closest('label')) || JA.visible(choiceWrapper(input));
   }
+
+  // Character limit shown as "0 of 20 characters" next to LinkedIn's new inputs.
+  function helperMaxLength(el) {
+    for (const id of (el.getAttribute('aria-describedby') ?? '').split(/\s+/)) {
+      const m = JA.text(byId(el, id)).match(/of (\d+) characters/i);
+      if (m) return Number(m[1]);
+    }
+    return null;
+  }
+
+  const RESUME_FILE = /\.(pdf|docx?|rtf|txt)\b/i;
 
   /** Collect unanswered fields under root. Returns API-ready fields + handles to fill them. */
   JA.collectFields = (root) => {
@@ -126,20 +175,27 @@
         seenGroups.add(key);
 
         if (el.type === 'radio' || siblings.length > 1) {
-          if (siblings.some((s) => s.checked)) continue; // already answered
-          const label = groupLabel(siblings);
+          if (siblings.some(isChecked)) continue; // already answered
+          const options = siblings.map(optionLabel);
+          // LinkedIn's resume picker: keep the selected resume, or pick the most recent.
+          if (el.type === 'radio' && options.length && options.every((o) => RESUME_FILE.test(o))) {
+            clickChoice(siblings[0]);
+            continue;
+          }
+          const raw = groupLabelRaw(siblings);
+          const label = clean(raw);
           add(
             {
               label,
               type: el.type === 'radio' ? 'radio' : 'checkbox_group',
-              options: siblings.map(optionLabel).slice(0, 300),
-              required: siblings.some((s) => isRequired(s, label)) || /\*/.test(label),
+              options: options.slice(0, 300),
+              required: siblings.some((s) => isRequired(s, raw)) || /\*\s*$/.test(raw),
             },
             { kind: el.type === 'radio' ? 'radio' : 'checkbox_group', els: siblings },
           );
         } else {
-          if (el.checked) continue;
-          const label = labelFor(el);
+          if (isChecked(el)) continue;
+          const label = labelFor(el) || labelText(choiceWrapper(el)) || clean(choiceWrapper(el)?.getAttribute('aria-label'));
           add({ label, type: 'checkbox', required: isRequired(el, label) }, { kind: 'checkbox', el });
         }
         continue;
@@ -182,15 +238,21 @@
               : 'text';
       const field = { label, type, required: isRequired(el, label), name: el.name || undefined };
       if (el.placeholder) field.placeholder = el.placeholder.slice(0, 500);
-      if (el.maxLength > 0 && el.maxLength < 100_000) field.max_length = el.maxLength;
+      const maxLength = el.maxLength > 0 && el.maxLength < 100_000 ? el.maxLength : helperMaxLength(el);
+      if (maxLength) field.max_length = maxLength;
       add(field, { kind: type === 'combobox' ? 'combobox' : 'text', el });
     }
     return { fields, handles };
   };
 
   function clickChoice(input) {
+    const before = isChecked(input);
+    const wrap = choiceWrapper(input);
     const label = forLabel(input);
-    (label && JA.visible(label) ? label : input).click();
+    const target = wrap && JA.visible(wrap) ? wrap : label && JA.visible(label) && labelText(label) ? label : input;
+    target.click();
+    // React can swallow a click on the wrapper; fall back to the input itself.
+    if (isChecked(input) === before && target !== input && input.isConnected) input.click();
   }
 
   JA.attachFile = (input, { base64, filename, mime }) => {
@@ -211,7 +273,7 @@
     const want = value.toLowerCase();
     const option = await JA.waitFor(
       () => {
-        const scope = (listId && el.ownerDocument.getElementById(listId)) || el.ownerDocument;
+        const scope = (listId && byId(el, listId)) || rootOf(el);
         const options = [...scope.querySelectorAll('[role="option"]')].filter(JA.visible);
         return options.find((o) => JA.text(o).toLowerCase().startsWith(want)) ?? options[0];
       },
@@ -244,12 +306,12 @@
         return true;
       }
       case 'checkbox':
-        if (handle.el.checked !== Boolean(value)) clickChoice(handle.el);
+        if (isChecked(handle.el) !== Boolean(value)) clickChoice(handle.el);
         return true;
       case 'checkbox_group':
         for (const cb of handle.els) {
           const want = value.includes(optionLabel(cb));
-          if (cb.checked !== want) clickChoice(cb);
+          if (isChecked(cb) !== want) clickChoice(cb);
         }
         return true;
       case 'combobox':
@@ -301,7 +363,11 @@
   };
 
   JA.visibleErrors = (root = document) =>
-    [...root.querySelectorAll('[role="alert"], .artdeco-inline-feedback--error, .error, .field-error, .invalid-feedback, [class*="error-message" i]')]
+    [
+      ...root.querySelectorAll(
+        '[role="alert"], .artdeco-inline-feedback--error, .error, .field-error, .invalid-feedback, [class*="error-message" i], [id^="error-message-"], [data-testid="text-input-helper-text"] p:not([aria-live])',
+      ),
+    ]
       .filter(JA.visible)
       .map(JA.text)
       .filter(Boolean)
