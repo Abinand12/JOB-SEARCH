@@ -38,6 +38,8 @@ const PARSE_INSTRUCTIONS = `Extract the candidate's details from the resume into
 - skills: every technical and professional skill mentioned, each with the years of hands-on use you can support from the role dates (0 if unclear).
 - experience: most recent first. highlights: 1-3 sentences summarizing the role's achievements in the resume's own terms.
 - education: highest degree first.
+- projects: personal, academic or professional projects listed in the resume, most recent first. description: 1-2 sentences in the resume's own terms. technologies: the tools and languages named for the project.
+- target_roles: 3-5 job titles, as written in job postings, that this candidate is a strong fit for right now, based on their titles, skills and seniority. Most fitting first.
 - headline: a one-line professional headline, e.g. "Senior Backend Engineer - Go, AWS, Kubernetes".
 - summary: 2-3 sentences in first person, based only on the resume.`;
 

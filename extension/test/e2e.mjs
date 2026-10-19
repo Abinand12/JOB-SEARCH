@@ -11,6 +11,9 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { answerFields } from '../../server/src/answers.js';
+import { matchJob, searchQueries } from '../../server/src/match.js';
+import { withDefaults } from '../../server/src/profile.js';
+import { sectionCounts } from '../../server/src/sections.js';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -23,13 +26,22 @@ const TOKEN = 'jap_test_token';
 const profile = {
   personal: { first_name: 'Asha', last_name: 'Menon', email: 'asha@example.com', phone: '+91 98765 43210', city: 'Kochi', country: 'India', linkedin_url: 'https://linkedin.com/in/asha' },
   total_years_experience: 5,
-  skills: [{ name: 'Python', years: 4 }],
+  current_title: 'Senior Engineer',
+  target_roles: ['Backend Engineer', 'Data Engineer', 'Platform Engineer'],
+  skills: [{ name: 'Python', years: 4 }, { name: 'Kubernetes', years: 0 }],
+  experience: [
+    { title: 'Senior Engineer', company: 'Globex', location: 'Bengaluru', start_date: '2021-03', end_date: '', is_current: true, highlights: 'Built payment APIs.' },
+    { title: 'Engineer', company: 'Initech', location: 'Kochi', start_date: '2018-06', end_date: '2021-02', is_current: false, highlights: 'Data pipelines.' },
+  ],
+  education: [{ degree: "Bachelor's", field_of_study: 'Computer Science', school: 'CUSAT', start_year: '2013', end_year: '2017', grade: '' }],
+  projects: [{ name: 'Ledger', role: '', url: 'https://github.com/asha/ledger', start_date: '', end_date: '', technologies: ['Go'], description: 'Double-entry ledger in Go.' }],
   preferences: { requires_sponsorship: false, gender: 'Prefer not to say' },
 };
 const settings = {
   daily_limit: 10, search_keywords: 'engineer', search_location: '', easy_apply_only: false, apply_external: true,
   auto_submit_easy_apply: true, auto_submit_external: true, auto_accept_consent: true,
   title_include: [], title_exclude: ['intern'], company_blacklist: [], min_delay_sec: 0.2, max_delay_sec: 0.4, min_gap_override: 0,
+  min_match_score: 40,
 };
 const fakeLlm = {
   async generateJson({ user }) {
@@ -57,6 +69,10 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify(data));
   };
 
+  if (url.pathname === '/apply-sections') {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    return res.end(fixture('company-sections.html'));
+  }
   if (url.pathname === '/apply') {
     let html = fixture('company-apply.html');
     if (url.searchParams.get('job')) html = html.replace(/<div id="captcha">[\s\S]*?<\/div>/, '');
@@ -80,7 +96,18 @@ const server = http.createServer(async (req, res) => {
   const route = `${req.method} ${url.pathname.replace(/\/[^/]+-\d+$/, '/:id')}`;
   switch (route) {
     case 'GET /api/session':
-      return json(200, { settings, submitted_today: 0, has_resume: true, name: 'Asha Menon' });
+      return json(200, {
+        settings,
+        submitted_today: 0,
+        has_resume: true,
+        name: 'Asha Menon',
+        search_queries: searchQueries(withDefaults(profile), settings),
+        section_counts: sectionCounts(withDefaults(profile)),
+      });
+    case 'POST /api/match': {
+      const fit = matchJob(withDefaults(profile), body.job);
+      return json(200, { ...fit, min_score: settings.min_match_score, apply: fit.score >= settings.min_match_score });
+    }
     case 'POST /api/answers': {
       const result = await answerFields({ fields: body.fields, job: body.job, profile, settings, llm: fakeLlm });
       return json(200, { answers: result.answers, missing: result.missing, llm_count: result.llmCount });
@@ -128,6 +155,8 @@ const context = await chromium.launchPersistentContext('', {
   args: [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`],
 });
 const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
+// The worker can be reported before its extension APIs are ready.
+await waitUntil(() => worker.evaluate(() => Boolean(globalThis.chrome?.storage?.local)), 'extension service worker ready', 15_000);
 await worker.evaluate(({ serverUrl, token }) => chrome.storage.local.set({ serverUrl, token }), { serverUrl: base, token: TOKEN });
 for (const p of context.pages()) if (p.url().startsWith('chrome-extension://')) await p.close(); // options page opened on install
 
@@ -186,8 +215,51 @@ await scenario('company form: pauses for CAPTCHA, then fills and submits', async
   if (!page.isClosed()) await page.close();
 });
 
+await scenario('company form: adds experience and project rows and fills each from the right entry', async () => {
+  const page = await context.newPage();
+  await page.goto('about:blank');
+  const tabId = await worker.evaluate(async () => (await chrome.tabs.query({ url: 'about:blank' }))[0].id);
+  await worker.evaluate(
+    ({ tabId }) =>
+      chrome.storage.session.set({
+        atsTabs: { [tabId]: { mode: 'linkedin', applicationId: 'app-901', job: { title: 'Engineer', company: 'Umbrella', url: 'https://example.test/job2' } } },
+      }),
+    { tabId },
+  );
+  const before = log.submitted.length;
+  await page.goto(`${base}/apply-sections`);
+  await waitUntil(() => log.submitted.length === before + 1, 'sections form submitted');
+  const d = log.submitted[before];
+
+  assert.equal(d.first_name, 'Asha');
+  assert.equal(d.location, 'Kochi, India', 'a field outside the sections uses the personal details');
+  assert.equal(d['exp[0][title]'], 'Senior Engineer');
+  assert.equal(d['exp[0][company]'], 'Globex');
+  assert.equal(d['exp[0][start]'], '03/2021');
+  assert.equal(d['exp[0][end]'], '');
+  assert.equal(d['exp[0][current]'], true);
+  assert.equal(d['exp[0][desc]'], 'Built payment APIs.');
+  assert.equal(d['exp[1][title]'], 'Engineer', 'second row added and filled from the second job');
+  assert.equal(d['exp[1][company]'], 'Initech');
+  assert.equal(d['exp[1][start]'], '06/2018');
+  assert.equal(d['exp[1][end]'], '02/2021');
+  assert.equal(d['exp[1][current]'], false);
+  assert.ok(!('exp[2][title]' in d), 'no more rows than jobs in the profile');
+  assert.equal(d.school, 'CUSAT');
+  assert.equal(d.degree, "Bachelor's Degree");
+  assert.equal(d.discipline, 'Computer Science');
+  assert.equal(d.grad, '2017');
+  assert.equal(d['proj[0][name]'], 'Ledger');
+  assert.equal(d['proj[0][url]'], 'https://github.com/asha/ledger');
+  assert.equal(d['proj[0][desc]'], 'Double-entry ledger in Go.');
+  assert.ok(!('proj[1][name]' in d));
+  assert.equal(d.skill_clicks, 0, '"Add skill" is not a section button');
+  if (!page.isClosed()) await page.close();
+});
+
 await scenario('LinkedIn: Easy Apply, external apply, title filter', async () => {
   const companyUrl = `${base}/apply`;
+  const submittedBefore = log.submitted.length;
   await context.route('https://www.linkedin.com/**', (route) =>
     route.fulfill({
       contentType: 'text/html',
@@ -216,7 +288,7 @@ await scenario('LinkedIn: Easy Apply, external apply, title filter', async () =>
   const external = log.applications.find((a) => a.job_title === 'Data Engineer');
   assert.equal(external.method, 'external_autofill');
   assert.ok(log.patches.some((p) => p.id === external.id && p.status === 'submitted'), 'external application submitted');
-  assert.equal(log.submitted.length, 2, 'company form submitted for the external job');
+  assert.equal(log.submitted.length - submittedBefore, 1, 'company form submitted for the external job');
 
   assert.ok(!log.applications.some((a) => /intern/i.test(a.job_title)), 'intern job filtered out');
   assert.equal(log.badAuth, 0);
@@ -266,7 +338,15 @@ await scenario('LinkedIn new design: safety reminder, native dialog, Yes/No ques
   assert.equal(sent.answers.k8s, '0');
   assert.equal(sent.answers.follow, false, 'unfollows the company');
 
-  // Second job hits LinkedIn's daily limit: the run stops with a 24 h cooldown.
+  // A job unlike the resume is skipped without opening Easy Apply, and recorded with its score.
+  const lowMatch = created.find((a) => a.job_title === 'Marketing Manager');
+  assert.equal(lowMatch.status, 'skipped');
+  assert.ok(lowMatch.match_score < 40, `match_score=${lowMatch.match_score}`);
+  assert.match(lowMatch.failure_reason, /^Low match/);
+  assert.ok(!(await page.evaluate(() => window.SUBMITTED)).some((s) => s.id === '202'));
+  assert.ok(first.match_score >= 40, `match_score=${first.match_score}`);
+
+  // Third job hits LinkedIn's daily limit: the run stops with a 24 h cooldown.
   const second = created.find((a) => a.job_title === 'Site Reliability Engineer');
   assert.ok(log.patches.some((p) => p.id === second.id && p.status === 'skipped'), 'second job marked skipped');
   const { cooldownUntil, cooldownReason } = await worker.evaluate(() => chrome.storage.local.get(['cooldownUntil', 'cooldownReason']));
@@ -282,7 +362,7 @@ await scenario('LinkedIn new design: safety reminder, native dialog, Yes/No ques
   const report = await worker.evaluate((id) => chrome.tabs.sendMessage(id, { type: 'linkedin:diagnose' }), tabId);
   const byKey = Object.fromEntries(report.checks.map((c) => [c.key, c]));
   assert.equal(byKey.design.detail, 'new design');
-  assert.match(byKey.cards.detail, /^2 found/);
+  assert.match(byKey.cards.detail, /^3 found/);
   assert.match(byKey.card_text.detail, /^Platform Engineer · Globex$/);
   assert.match(byKey.apply.detail, /^Easy Apply/);
 });

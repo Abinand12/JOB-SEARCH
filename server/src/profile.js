@@ -31,6 +31,7 @@ export const DEFAULT_SETTINGS = {
   // LinkedIn reportedly caps Easy Apply around 50 a day and throttles fast applying;
   // stay well below that with human-scale pauses between applications.
   daily_limit: 15,
+  // Empty = search for the roles that fit the resume (profile.target_roles). Separate several searches with ";".
   search_keywords: '',
   search_location: '',
   easy_apply_only: false,
@@ -43,6 +44,8 @@ export const DEFAULT_SETTINGS = {
   company_blacklist: [],
   min_delay_sec: 60,
   max_delay_sec: 180,
+  // Skip jobs whose fit with the resume scores below this (0-100). 0 = apply to everything.
+  min_match_score: 40,
 };
 
 export const EMPTY_PROFILE = {
@@ -67,6 +70,8 @@ export const EMPTY_PROFILE = {
   skills: [],
   experience: [],
   education: [],
+  projects: [],
+  target_roles: [],
   certifications: [],
   languages: [],
   preferences: DEFAULT_PREFERENCES,
@@ -123,6 +128,7 @@ export function profileContext(profile, resumeText) {
         skills: p.skills,
         experience: p.experience,
         education: p.education,
+        projects: p.projects,
         certifications: p.certifications,
         languages: p.languages,
         preferences: p.preferences,

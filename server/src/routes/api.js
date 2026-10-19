@@ -5,6 +5,8 @@ import { answerFields } from '../answers.js';
 import { generateExtensionToken, hashToken, rateLimitPerUser, requireUser } from '../auth.js';
 import { DEFAULT_SETTINGS, mergeParsedResume, settingsWithDefaults, withDefaults } from '../profile.js';
 import { extractResumeText, MAX_RESUME_BYTES, parseResume } from '../resume.js';
+import { matchJob, searchQueries } from '../match.js';
+import { SECTION_KINDS, sectionCounts } from '../sections.js';
 import { computeStats, METHODS, STATUSES } from '../stats.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_RESUME_BYTES } });
@@ -18,6 +20,9 @@ const FieldSchema = z.object({
   placeholder: z.string().max(500).optional(),
   name: z.string().max(200).optional(),
   max_length: z.number().int().positive().optional(),
+  section: z
+    .object({ kind: z.enum(SECTION_KINDS), index: z.number().int().min(0).max(20) })
+    .optional(),
 });
 
 const JobSchema = z
@@ -39,6 +44,8 @@ const ApplicationSchema = z.object({
   method: z.enum(METHODS),
   ats: z.string().max(50).optional(),
   status: z.enum(STATUSES).optional(),
+  match_score: z.number().int().min(0).max(100).nullable().optional(),
+  failure_reason: z.string().max(2000).nullable().optional(),
 });
 
 const ApplicationPatchSchema = z.object({
@@ -83,6 +90,7 @@ export function sanitizeSettings(input = {}) {
     else out[key] = String(value ?? '').slice(0, 500);
   }
   if (out.max_delay_sec < out.min_delay_sec) out.max_delay_sec = out.min_delay_sec;
+  out.min_match_score = Math.min(out.min_match_score, 100);
   return out;
 }
 
@@ -173,6 +181,9 @@ export function createApiRouter({ db, llm, config }) {
       settings,
       submitted_today: await db.countSubmittedSince(req.user.id, startOfTodayUtc()),
       has_resume: Boolean(row?.resume_path),
+      // What the bot searches for, and how many experience/education/project rows to add on forms.
+      search_queries: searchQueries(profile, settings),
+      section_counts: sectionCounts(profile),
       name: [profile.personal.first_name, profile.personal.last_name].filter(Boolean).join(' '),
     });
   });
@@ -206,6 +217,16 @@ export function createApiRouter({ db, llm, config }) {
     res.json({ answers: result.answers, missing: result.missing, llm_count: result.llmCount });
   });
 
+  // --- job fit ------------------------------------------------------------------
+  // Free and deterministic: no AI call, so the bot can check every job it opens.
+  router.post('/match', async (req, res) => {
+    const { job } = parseBody(z.object({ job: JobSchema }), req.body);
+    const row = await db.getProfile(req.user.id);
+    const settings = settingsWithDefaults(row?.settings);
+    const result = matchJob(withDefaults(row?.data), job);
+    res.json({ ...result, min_score: settings.min_match_score, apply: result.score >= settings.min_match_score });
+  });
+
   // --- applications ------------------------------------------------------------
   router.post('/applications', async (req, res) => {
     const body = parseBody(ApplicationSchema, req.body);
@@ -217,7 +238,7 @@ export function createApiRouter({ db, llm, config }) {
       ...body,
       status: body.status ?? 'in_progress',
       started_at: existing?.started_at ?? new Date().toISOString(),
-      failure_reason: null,
+      failure_reason: body.failure_reason ?? null,
     });
     res.status(existing ? 200 : 201).json({ application, already_applied: false });
   });

@@ -57,7 +57,7 @@ test('migrate applies the schema once and is safe to re-run', { skip: !dbUrl && 
 
     const logs = [];
     const first = await migrate({ connectionString: testUrl, log: (m) => logs.push(m), env: {} });
-    assert.deepEqual(first, ['0001_init.sql']);
+    assert.deepEqual(first, ['0001_init.sql', '0002_match_score.sql']);
     const second = await migrate({ connectionString: testUrl, log: (m) => logs.push(m), env: {} });
     assert.deepEqual(second, []);
     assert.equal(logs.at(-1), 'Database is up to date.');
@@ -69,6 +69,10 @@ test('migrate applies the schema once and is safe to re-run', { skip: !dbUrl && 
       tables.rows.map((r) => r.table_name),
       ['applications', 'extension_tokens', 'llm_usage', 'profiles', 'question_answers', 'verification_alerts'],
     );
+    const col = await db.query(
+      `select data_type from information_schema.columns where table_name = 'applications' and column_name = 'match_score'`,
+    );
+    assert.equal(col.rows[0].data_type, 'smallint');
     const rls = await db.query(`select count(*)::int as n from pg_tables where schemaname = 'public' and rowsecurity`);
     assert.equal(rls.rows[0].n, 6);
     const bucket = await db.query(`select public from storage.buckets where id = 'resumes'`);
@@ -79,12 +83,12 @@ test('migrate applies the schema once and is safe to re-run', { skip: !dbUrl && 
     // A failing migration rolls back and is not recorded.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mig-'));
     fs.copyFileSync(path.join(findMigrationsDir({}), '0001_init.sql'), path.join(dir, '0001_init.sql'));
-    fs.writeFileSync(path.join(dir, '0002_broken.sql'), 'create table public.half_done (id int); select nope_this_fails();');
-    await assert.rejects(migrate({ connectionString: testUrl, dir, log: () => {}, env: {} }), /0002_broken\.sql failed/);
+    fs.writeFileSync(path.join(dir, '0003_broken.sql'), 'create table public.half_done (id int); select nope_this_fails();');
+    await assert.rejects(migrate({ connectionString: testUrl, dir, log: () => {}, env: {} }), /0003_broken\.sql failed/);
     const half = await db.query(`select to_regclass('public.half_done') as t`);
     assert.equal(half.rows[0].t, null);
     const recorded = await db.query('select name from app_private.schema_migrations order by name');
-    assert.deepEqual(recorded.rows.map((r) => r.name), ['0001_init.sql']);
+    assert.deepEqual(recorded.rows.map((r) => r.name), ['0001_init.sql', '0002_match_score.sql']);
     await db.end();
   } finally {
     await admin.query(`drop database if exists ${dbName} with (force)`);

@@ -113,7 +113,7 @@
         if (!(await JA.handleVerification({ applicationId }))) return report('failed', 'Verification was not completed');
         const form = formRoot() ?? root;
         JA.panel.show('Filling in the application…');
-        const result = await JA.autofill(form, job);
+        const result = await JA.autofill(form, job, { sectionCounts: session.sectionCounts });
         counts.questions += result.filled;
         counts.llm += result.llm;
         const unanswered = [...new Set([...result.missing.map((m) => m.label), ...result.unfilled])].filter(Boolean);

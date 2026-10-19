@@ -57,6 +57,7 @@
   let running = false;
   let stopRequested = false;
   let settings = null;
+  let searchQueries = [''];
   let externalWaiter = null;
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -89,9 +90,9 @@
   // Run loop
   // ---------------------------------------------------------------------------
 
-  function searchUrl(s, startAt = 0) {
+  function searchUrl(s, keywords, startAt = 0) {
     const url = new URL('https://www.linkedin.com/jobs/search/');
-    if (s.search_keywords) url.searchParams.set('keywords', s.search_keywords);
+    if (keywords) url.searchParams.set('keywords', keywords);
     if (s.search_location) url.searchParams.set('location', s.search_location);
     if (s.easy_apply_only) url.searchParams.set('f_AL', 'true');
     url.searchParams.set('sortBy', 'DD');
@@ -130,10 +131,12 @@
     try {
       const session = await JA.api('GET', '/session');
       settings = session.settings;
+      searchQueries = session.search_queries?.length ? session.search_queries : [''];
       if (!session.has_resume) return await stop('Upload your resume in the dashboard first.');
       await securityGate(null);
+      const { searchQueryIndex = 0 } = await chrome.storage.local.get('searchQueryIndex');
       if (!isJobSearchPage()) {
-        location.href = searchUrl(settings);
+        location.href = searchUrl(settings, searchQueries[searchQueryIndex] ?? searchQueries[0]);
         return; // the script starts again on the search page
       }
 
@@ -175,8 +178,16 @@
       }
 
       const next = nextPageUrl();
-      if (!next) throw new StopRun('No more jobs in this search. Done!');
-      location.href = next;
+      if (next) {
+        location.href = next;
+        return;
+      }
+      // This search is used up: move on to the next role that fits the resume.
+      const nextIndex = searchQueryIndex + 1;
+      if (nextIndex >= searchQueries.length) throw new StopRun('No more jobs in these searches. Done!');
+      await chrome.storage.local.set({ searchQueryIndex: nextIndex });
+      status(`Now searching for "${searchQueries[nextIndex]}"…`);
+      location.href = searchUrl(settings, searchQueries[nextIndex]);
     } catch (error) {
       if (error instanceof StopRun) {
         status(error.message, error.cooldownHours ? 'error' : 'success');
@@ -435,9 +446,39 @@
     if (!job.title || filterReason(job) || alreadyApplied() || noLongerAccepting()) return 'skip';
 
     const { easy, external } = applyControls();
-    if (easy) return easyApply(job, easy);
-    if (external && settings.apply_external && !settings.easy_apply_only) return externalApply(job, external);
-    return 'skip';
+    const useExternal = !easy && external && settings.apply_external && !settings.easy_apply_only;
+    if (!easy && !useExternal) return 'skip';
+    if (!(await fitsResume(job, easy ? 'easy_apply' : 'external_autofill'))) return 'skip';
+    return easy ? easyApply(job, easy) : externalApply(job, external);
+  }
+
+  // Score the job against the resume (server side, no AI cost). Low matches are
+  // recorded as skipped so the dashboard shows why.
+  async function fitsResume(job, method) {
+    if (!settings.min_match_score) return true;
+    let fit;
+    try {
+      fit = await JA.api('POST', '/match', { job: { title: job.title, company: job.company, description: job.description } });
+    } catch (error) {
+      console.warn('[Job Autopilot] could not score the job', error);
+      return true;
+    }
+    job.matchScore = fit.score;
+    if (fit.apply) return true;
+    status(`Skipping ${job.title}: ${fit.score}% match with your resume.`);
+    await JA.api('POST', '/applications', {
+      job_url: job.url,
+      job_title: job.title,
+      company: job.company,
+      location: job.location,
+      source: 'linkedin',
+      method,
+      ats: method === 'easy_apply' ? 'linkedin' : 'other',
+      status: 'skipped',
+      match_score: fit.score,
+      failure_reason: `Low match (${fit.score}%): ${fit.reasons.join('; ') || 'few of your skills'}`.slice(0, 2000),
+    }).catch(() => {});
+    return false;
   }
 
   // ---------------------------------------------------------------------------
@@ -573,6 +614,7 @@
       source: 'linkedin',
       method: 'easy_apply',
       ats: 'linkedin',
+      match_score: job.matchScore ?? null,
     });
     if (already_applied) return 'skip';
     const appId = application.id;
@@ -690,6 +732,7 @@
       source: 'linkedin',
       method: 'external_autofill',
       ats: 'other',
+      match_score: job.matchScore ?? null,
     });
     if (already_applied) return 'skip';
 

@@ -43,6 +43,18 @@ export const ResumeProfileSchema = z.object({
       grade: z.string(),
     }),
   ),
+  projects: z.array(
+    z.object({
+      name: z.string(),
+      role: z.string(),
+      url: z.string(),
+      start_date: z.string(),
+      end_date: z.string(),
+      technologies: z.array(z.string()),
+      description: z.string(),
+    }),
+  ),
+  target_roles: z.array(z.string()),
   certifications: z.array(z.string()),
   languages: z.array(z.object({ language: z.string(), proficiency: z.string() })),
 });

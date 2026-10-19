@@ -20,8 +20,9 @@
 
   <script>
     const JOBS = {
-      201: { title: 'Platform Engineer', company: 'Globex', place: 'Bengaluru, Karnataka, India (Hybrid)', easy: true },
-      202: { title: 'Site Reliability Engineer', company: 'Initech', place: 'Remote', easy: true, limit: true },
+      201: { title: 'Platform Engineer', company: 'Globex', place: 'Bengaluru, Karnataka, India (Hybrid)', easy: true, desc: 'Run Kubernetes platforms in Python.' },
+      202: { title: 'Marketing Manager', company: 'Hooli', place: 'Mumbai', easy: true, desc: 'Own SEO, SEM and content marketing in HubSpot.' },
+      203: { title: 'Site Reliability Engineer', company: 'Initech', place: 'Remote', easy: true, limit: true, desc: 'Keep Python services on Kubernetes reliable.' },
     };
     window.SUBMITTED = [];
     const $ = (s) => document.querySelector(s);
@@ -48,7 +49,7 @@
       $('#detail').innerHTML = `<div data-sdui-component="com.linkedin.sdui.generated.jobseeker.JobDetailsTopCard">
           <h1>${job.title}</h1><p>${job.company}</p>
           <button type="button" aria-label="Easy Apply to this job"><span><span>Easy Apply</span></span></button></div>
-        <h2>About the job</h2><div data-testid="expandable-text-box">Run Kubernetes platforms for ${job.company}.</div>
+        <h2>About the job</h2><div data-testid="expandable-text-box">${job.desc}</div>
         <h2>More jobs</h2><div><button type="button" aria-label="Easy Apply to this job">Easy Apply</button></div>`;
       $('#detail button[aria-label="Easy Apply to this job"]').addEventListener('click', () => (job.limit ? showLimit() : showSafety()));
     }

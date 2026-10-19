@@ -33,6 +33,15 @@ The dashboard (deployed on **Railway**, data in **Supabase**) shows how many app
 
 Most applications need zero or one AI call, and repeat questions are free.
 
+### Experience, education and project rows
+
+On company websites, forms often show one "Work experience" block with an **Add another** button (Workday starts with none). The extension clicks **Add** until the form has one block per job, degree and project in your profile (up to 5, 3 and 3). Each field is tagged with its block, so "Company" in the second block gets your second job and "End date" is left blank for your current role. Buttons such as "Add skill" or "Add website" are left alone.
+
+### Which jobs it applies to
+
+- **What it searches for.** With *LinkedIn searches* left blank in Bot settings, the bot searches LinkedIn for the roles your resume fits. The AI picks these when it reads your resume, and you can edit them under *Profile → Roles that fit your resume*. When one search runs out of jobs, it moves to the next. You can type your own searches instead, separated with `;`.
+- **Fit check.** Before applying, the server scores each job 0–100 against your resume. It costs nothing because no AI is involved. The score is made of: job title against your roles (40%), the posting's skills that are on your resume (45%), and required years against your experience (15%). Jobs below *Skip jobs matching less than* (default 40) are skipped and appear in Applications as "Skipped" with the score and reason. Set it to 0 to apply to everything.
+
 ## Which AI model, and what it costs
 
 All three options below work. Switch by setting a different key; no code changes.

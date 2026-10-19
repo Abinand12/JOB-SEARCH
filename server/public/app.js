@@ -450,7 +450,7 @@ async function loadApplications() {
   if ($('#app-status').value) params.set('status', $('#app-status').value);
   if ($('#app-method').value) params.set('method', $('#app-method').value);
   const { rows, total } = await api(`/applications?${params}`);
-  $('#app-table').innerHTML = `<thead><tr><th>Date</th><th>Job</th><th>Company</th><th>Platform</th><th>How</th><th>Status</th><th class="num">AI answers</th></tr></thead>
+  $('#app-table').innerHTML = `<thead><tr><th>Date</th><th>Job</th><th>Company</th><th>Platform</th><th>How</th><th>Status</th><th class="num">Match</th><th class="num">AI answers</th></tr></thead>
     <tbody>${
       rows.length
         ? rows
@@ -462,11 +462,12 @@ async function loadApplications() {
           <td>${esc(ATS_LABELS[r.ats] ?? r.ats ?? '–')}</td>
           <td>${esc(METHOD_LABELS[r.method] ?? r.method)}</td>
           <td>${statusPill(r.status)}${r.failure_reason ? `<div class="muted">${esc(r.failure_reason)}</div>` : ''}</td>
+          <td class="num">${r.match_score == null ? '–' : `${r.match_score}%`}</td>
           <td class="num">${fmt.format(r.llm_answers ?? 0)} / ${fmt.format(r.questions_answered ?? 0)}</td>
         </tr>`,
             )
             .join('')
-        : '<tr><td colspan="7" class="muted">No applications match.</td></tr>'
+        : '<tr><td colspan="8" class="muted">No applications match.</td></tr>'
     }</tbody>`;
   const end = Math.min(state.appsOffset + PAGE_SIZE, total);
   $('#app-page').textContent = total ? `${state.appsOffset + 1}–${end} of ${fmt.format(total)}` : '';
@@ -561,9 +562,10 @@ const CAREER_FIELDS = [
   { key: 'current_title', label: 'Current title' },
   { key: 'current_company', label: 'Current company' },
   { key: 'total_years_experience', label: 'Total years of experience', type: 'number' },
+  { key: 'target_roles', label: 'Roles that fit your resume (the bot searches for these)', type: 'list', placeholder: 'Backend Engineer, Platform Engineer' },
   { key: 'summary', label: 'Summary', type: 'textarea' },
 ];
-const CAREER_JSON_KEYS = ['skills', 'experience', 'education', 'certifications', 'languages'];
+const CAREER_JSON_KEYS = ['skills', 'experience', 'education', 'projects', 'certifications', 'languages'];
 
 function renderProfile(profile) {
   renderFields($('#personal-fields'), PERSONAL_FIELDS, profile.personal);
@@ -675,7 +677,8 @@ function renderAnswers() {
 
 const SETTINGS_FIELDS = [
   { key: 'daily_limit', label: 'Max applications per day', type: 'number' },
-  { key: 'search_keywords', label: 'LinkedIn search keywords', placeholder: 'backend engineer' },
+  { key: 'search_keywords', label: 'LinkedIn searches (blank = the roles that fit your resume; separate with ;)', placeholder: 'backend engineer; platform engineer' },
+  { key: 'min_match_score', label: 'Skip jobs matching your resume less than (%; 0 = apply to all)', type: 'number' },
   { key: 'search_location', label: 'LinkedIn search location', placeholder: 'Bengaluru' },
   { key: 'title_include', label: 'Only titles containing (comma separated)', type: 'list', placeholder: 'engineer, developer' },
   { key: 'title_exclude', label: 'Skip titles containing', type: 'list', placeholder: 'intern, principal' },

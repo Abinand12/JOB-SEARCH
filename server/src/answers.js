@@ -7,6 +7,7 @@
 
 import { AnswersSchema } from './llm/schemas.js';
 import { fullName, profileContext, withDefaults, settingsWithDefaults } from './profile.js';
+import { answerSectionField } from './sections.js';
 
 export const RESUME_TOKEN = '__RESUME__';
 
@@ -474,6 +475,7 @@ function buildUserPrompt(items, job) {
     const options = realOptions(field.options);
     if (options.length) q.options = options;
     if (field.required) q.required = true;
+    if (field.section) q.section = `${field.section.kind} entry ${field.section.index + 1}`;
     if (field.max_length) q.max_length = field.max_length;
     return q;
   });
@@ -517,7 +519,18 @@ export async function answerFields({ fields, job = {}, profile, resumeText = '',
       continue;
     }
 
-    const jobSpecific = isJobSpecific(q, job);
+    // "Company" in the 2nd work-experience block answers from the 2nd job, never from a
+    // saved answer; such fields are not cached either (the same label means different things).
+    if (field.section) {
+      const section = answerSectionField(field, q, p);
+      if (section.matched) {
+        const value = section.value === undefined || section.value === '' ? null : coerce(field, section.value);
+        results.set(field.id, value === null ? none : { id: field.id, value, source: 'rule', rule: `${field.section.kind}_section` });
+        continue;
+      }
+    }
+
+    const jobSpecific = Boolean(field.section) || isJobSpecific(q, job);
     const savedAnswer = jobSpecific ? null : saved.get(q);
 
     if (savedAnswer?.source === 'user') {

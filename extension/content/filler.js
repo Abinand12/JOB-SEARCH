@@ -148,15 +148,170 @@
 
   const RESUME_FILE = /\.(pdf|docx?|rtf|txt)\b/i;
 
+  // ---------------------------------------------------------------------------
+  // Repeating sections: work experience, education, projects
+  // ---------------------------------------------------------------------------
+
+  // Anchored, so a page title like "Engineer, Customer Experience" is not a section.
+  const SECTION_HEADINGS = [
+    ['project', /^(my |your )?(personal |academic |key |professional |relevant )?projects?( details| information)?$/],
+    [
+      'education',
+      /^(my |your )?(education|educational (background|history|details|qualifications?)|education (history|details|information)|academic (history|background|details|qualifications?)|academics|qualifications?|degrees?)$/,
+    ],
+    [
+      'experience',
+      /^(my |your )?(work |professional |relevant |previous |prior )?(experience|experiences|employment|employment (history|details)|work history|career history|employers?|positions? held)( details| information)?$/,
+    ],
+  ];
+  const sectionText = (text) =>
+    String(text ?? '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\b(\d{1,2})\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const HEADING = 'h1, h2, h3, h4, h5, h6, [role="heading"], legend';
+  const REAL_HEADING = /^(H[1-6])$/;
+  // Workday marks its sections with data-automation-id.
+  const AUTOMATION = [
+    ['experience', /workExperience/i],
+    ['education', /^education/i],
+    ['project', /project/i],
+  ];
+
+  function headingKind(text) {
+    if (!text || text.length > 60) return null;
+    const t = sectionText(text);
+    return SECTION_HEADINGS.find(([, re]) => re.test(t))?.[0] ?? null;
+  }
+
+  const precedes = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  /**
+   * The repeating section a field sits in: the nearest heading before it, looking
+   * outward one container at a time. "Work Experience 2" also gives the entry number.
+   * @returns {{kind:string, number:number|null}|null}
+   */
+  function sectionInfo(el) {
+    let node = el.parentElement;
+    for (let depth = 0; node && depth < 12 && node !== document.body; depth++, node = node.parentElement) {
+      const auto = node.getAttribute('data-automation-id') ?? '';
+      const autoKind = AUTOMATION.find(([, re]) => re.test(auto))?.[0];
+      if (autoKind) {
+        const n = auto.match(/-(\d+)$/);
+        return { kind: autoKind, number: n ? Number(n[1]) : null };
+      }
+      const headings = [...node.querySelectorAll(HEADING)].filter((h) => !h.contains(el) && precedes(h, el) && JA.visible(h));
+      for (let i = headings.length - 1; i >= 0; i--) {
+        const text = JA.text(headings[i]);
+        const kind = headingKind(text);
+        if (kind) {
+          const n = text.match(/(?:#\s*|\s)(\d{1,2})\s*$/);
+          return { kind, number: n ? Number(n[1]) : null };
+        }
+        // A real heading for something else ("Contact details") ends the search.
+        if (REAL_HEADING.test(headings[i].tagName) || headings[i].getAttribute('role') === 'heading') return null;
+      }
+    }
+    return null;
+  }
+
+  const DATE_PART = /^(month|year|day|mm|yyyy|yy|dd)$/i;
+
+  // Workday-style split dates label their parts just "Month" / "Year"; add the group's label ("From").
+  function withDateContext(el, label) {
+    if (!DATE_PART.test(label)) return label;
+    const group = el.closest('fieldset, [role="group"]');
+    let context = '';
+    if (group) {
+      const legend = group.querySelector('legend');
+      const ids = group.getAttribute('aria-labelledby');
+      context = (legend && JA.text(legend)) || (ids && JA.text(byId(group, ids.split(/\s+/)[0]))) || group.getAttribute('aria-label') || '';
+    }
+    if (!context) context = nearbyText(el.parentElement?.parentElement ?? el);
+    return context && !DATE_PART.test(clean(context)) ? `${clean(context)} ${label}` : label;
+  }
+
+  const SECTION_NAMES = { experience: 'experience', education: 'education', project: 'project' };
+
+  // Number every field of a section by entry: an explicit "Work Experience 2" heading,
+  // else the how-manyth time the same label appears in that kind of section.
+  function assignSections(items) {
+    const seen = new Map();
+    for (const item of items) {
+      const info = sectionInfo(item.el);
+      if (!info || !SECTION_NAMES[info.kind]) continue;
+      const key = `${info.kind}|${item.label.toLowerCase()}`;
+      const occurrence = seen.get(key) ?? 0;
+      seen.set(key, occurrence + 1);
+      item.section = { kind: info.kind, index: info.number ? info.number - 1 : occurrence };
+    }
+  }
+
+  // How many entries of each kind the form shows now.
+  function sectionCensus(root) {
+    const items = [...root.querySelectorAll('input, select, textarea')]
+      .filter((el) => !SKIP_TYPES.has(el.type) && (JA.visible(el) || choiceVisible(el)))
+      .map((el) => ({ el, label: withDateContext(el, labelFor(el)) }));
+    assignSections(items);
+    const counts = {};
+    for (const { section } of items) {
+      if (section) counts[section.kind] = Math.max(counts[section.kind] ?? 0, section.index + 1);
+    }
+    return counts;
+  }
+
+  const ADD_BUTTON = /^\+?\s*(add|add another|add more|add new|\+)(\s|$)/i;
+  const NOT_A_SECTION = /skill|language|website|link|url|social|reference|certif|licen[cs]e|file|attachment|resume|\bcv\b|cover|question|phone|email|address/i;
+
+  function addButtonKind(button) {
+    const text = `${JA.text(button)} ${button.getAttribute('aria-label') ?? ''}`.trim();
+    if (text.length > 60 || !ADD_BUTTON.test(text) || NOT_A_SECTION.test(text)) return null;
+    const rest = text.replace(ADD_BUTTON, '').replace(/^(another|more|new|an?)\s+/i, '');
+    return headingKind(rest) ?? sectionInfo(button)?.kind ?? null;
+  }
+
+  /**
+   * Click "Add another" / "Add" in experience, education and project sections until the
+   * form has as many entries as the profile (the server caps the counts).
+   * @param {Element} root
+   * @param {{experience?:number, education?:number, project?:number}} wanted
+   * @returns {Promise<number>} entries added
+   */
+  JA.expandSections = async (root, wanted = {}) => {
+    let added = 0;
+    const gaveUp = new Set();
+    for (let clicks = 0; clicks < 12; clicks++) {
+      const have = sectionCensus(root);
+      const buttons = [...root.querySelectorAll('button, a, [role="button"]')].filter(
+        (b) => JA.visible(b) && !b.disabled && b.getAttribute('aria-disabled') !== 'true',
+      );
+      const next = buttons
+        .map((b) => ({ b, kind: addButtonKind(b) }))
+        .find(({ kind }) => kind && !gaveUp.has(kind) && (wanted[kind] ?? 0) > (have[kind] ?? 0));
+      if (!next) break;
+      next.b.click();
+      const grew = await JA.waitFor(() => (sectionCensus(root)[next.kind] ?? 0) > (have[next.kind] ?? 0), { timeout: 4000 });
+      if (grew) added += 1;
+      else gaveUp.add(next.kind); // the button did something else; do not keep clicking it
+      await JA.sleep(300);
+    }
+    return added;
+  };
+
   /** Collect unanswered fields under root. Returns API-ready fields + handles to fill them. */
   JA.collectFields = (root) => {
     const fields = [];
     const handles = new Map();
     const seenGroups = new Set();
+    const placed = [];
     const add = (field, handle) => {
       const id = `f${++seq}`;
-      fields.push({ id, ...field, label: (field.label || '').slice(0, 500) });
+      const entry = { id, ...field, label: (field.label || '').slice(0, 500) };
+      fields.push(entry);
       handles.set(id, handle);
+      placed.push({ el: handle.el ?? handle.els[0], label: entry.label, field: entry });
     };
 
     const elements = [...root.querySelectorAll('input, select, textarea')].filter(
@@ -209,7 +364,7 @@
       }
 
       if (!JA.visible(el)) continue;
-      const label = labelFor(el);
+      const label = withDateContext(el, labelFor(el));
 
       if (el instanceof HTMLSelectElement) {
         const selected = el.options[el.selectedIndex];
@@ -242,6 +397,8 @@
       if (maxLength) field.max_length = maxLength;
       add(field, { kind: type === 'combobox' ? 'combobox' : 'text', el });
     }
+    assignSections(placed);
+    for (const p of placed) if (p.section) p.field.section = p.section;
     return { fields, handles };
   };
 
@@ -330,10 +487,12 @@
   };
 
   /**
-   * Fill every unanswered field under root.
+   * Fill every unanswered field under root. With sectionCounts, first add experience,
+   * education and project entries ("Add another") up to those counts.
    * @returns {{fields:number, filled:number, llm:number, missing:Array<{label:string}>, unfilled:string[]}}
    */
-  JA.autofill = async (root, job = {}) => {
+  JA.autofill = async (root, job = {}, { sectionCounts = null } = {}) => {
+    if (sectionCounts) await JA.expandSections(root, sectionCounts);
     const { fields, handles } = JA.collectFields(root);
     if (!fields.length) return { fields: 0, filled: 0, llm: 0, missing: [], unfilled: [] };
 

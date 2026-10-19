@@ -112,9 +112,9 @@ async function resolveTabAlert(tabId, status = 'resolved') {
 }
 
 // --- LinkedIn run control ---------------------------------------------------
-function linkedinSearchUrl(settings) {
+function linkedinSearchUrl(settings, keywords) {
   const url = new URL('https://www.linkedin.com/jobs/search/');
-  if (settings.search_keywords) url.searchParams.set('keywords', settings.search_keywords);
+  if (keywords) url.searchParams.set('keywords', keywords);
   if (settings.search_location) url.searchParams.set('location', settings.search_location);
   if (settings.easy_apply_only) url.searchParams.set('f_AL', 'true');
   url.searchParams.set('sortBy', 'DD');
@@ -132,8 +132,10 @@ async function startLinkedIn() {
   const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
   let tab = active;
   if (!active?.url?.startsWith('https://www.linkedin.com/jobs/')) {
-    tab = await chrome.tabs.create({ url: linkedinSearchUrl(session.settings) });
+    tab = await chrome.tabs.create({ url: linkedinSearchUrl(session.settings, session.search_queries?.[0]) });
   }
+  // A fresh run starts with the first search (your keywords, or the roles your resume fits).
+  await chrome.storage.local.set({ searchQueryIndex: 0 });
   await setState({ running: true, linkedinTabId: tab.id });
   await refreshBadge();
   // An already-loaded tab gets the message; a new tab starts itself via state:get.
@@ -208,7 +210,7 @@ const handlers = {
     const entry = state.atsTabs[sender.tab?.id];
     if (!entry || entry.done) return null;
     const session = await getSession().catch(() => null);
-    return { ...entry, settings: session?.settings ?? {} };
+    return { ...entry, settings: session?.settings ?? {}, sectionCounts: session?.section_counts ?? {} };
   },
   'ats:done': async (msg, sender) => {
     const tabId = sender.tab?.id;
@@ -252,7 +254,10 @@ const handlers = {
     state.atsTabs[tab.id] = entry;
     await setState({ atsTabs: state.atsTabs });
     const session = await getSession();
-    await chrome.tabs.sendMessage(tab.id, { type: 'ats:start', session: { ...entry, settings: session.settings } });
+    await chrome.tabs.sendMessage(tab.id, {
+      type: 'ats:start',
+      session: { ...entry, settings: session.settings, sectionCounts: session.section_counts ?? {} },
+    });
     return { ok: true };
   },
 

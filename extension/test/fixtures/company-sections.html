@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Apply – Engineer, Customer Experience – Umbrella</title>
+<style>
+  body { font: 15px system-ui; max-width: 700px; margin: 24px auto; }
+  label, input, select, textarea { display: block; margin: 4px 0; }
+  .entry { border: 1px solid #ddd; padding: 8px; margin: 8px 0; }
+</style>
+</head>
+<body>
+  <!-- The page title mentions "Experience": it must not make every field an experience field. -->
+  <h1>Engineer, Customer Experience</h1>
+  <form id="application">
+    <h3>Personal information</h3>
+    <label for="first_name">First name *</label><input id="first_name" name="first_name" required>
+    <label for="location">Location</label><input id="location" name="location">
+
+    <!-- Greenhouse-style: one entry shown, "+ Add another" clones it. -->
+    <div id="experience">
+      <h3>Work experience</h3>
+      <div id="exp-entries"></div>
+      <button type="button" id="add-exp">+ Add another</button>
+    </div>
+
+    <!-- Flat layout: the heading and the fields are siblings. -->
+    <h3>Education</h3>
+    <label for="school">School *</label><input id="school" name="school" required>
+    <label for="degree">Degree</label>
+    <select id="degree" name="degree"><option value="">Select…</option><option>Bachelor's Degree</option><option>Master's Degree</option></select>
+    <label for="discipline">Discipline</label><input id="discipline" name="discipline">
+    <label for="grad">End year</label>
+    <select id="grad" name="grad"><option value="">Year</option><option>2016</option><option>2017</option><option>2018</option></select>
+
+    <!-- Workday-style: no entries until "Add" is clicked; numbered entry headings. -->
+    <div data-automation-id="projectSection">
+      <h3>Projects</h3>
+      <div id="proj-entries"></div>
+      <button type="button" id="add-proj">Add</button>
+    </div>
+
+    <h3>Skills</h3>
+    <button type="button" id="add-skill">Add skill</button>
+    <div id="skills"></div>
+
+    <button type="submit">Submit application</button>
+  </form>
+
+  <script>
+    let exp = 0;
+    let proj = 0;
+    function addExperience() {
+      const i = exp++;
+      const div = document.createElement('div');
+      div.className = 'entry';
+      div.innerHTML = `
+        <label for="exp${i}-title">Title *</label><input id="exp${i}-title" name="exp[${i}][title]" required>
+        <label for="exp${i}-company">Company *</label><input id="exp${i}-company" name="exp[${i}][company]" required>
+        <label for="exp${i}-start">Start date</label><input id="exp${i}-start" name="exp[${i}][start]" placeholder="MM/YYYY">
+        <label for="exp${i}-end">End date</label><input id="exp${i}-end" name="exp[${i}][end]" placeholder="MM/YYYY">
+        <label><input type="checkbox" id="exp${i}-current" name="exp[${i}][current]"> I currently work here</label>
+        <label for="exp${i}-desc">Description</label><textarea id="exp${i}-desc" name="exp[${i}][desc]"></textarea>`;
+      document.getElementById('exp-entries').append(div);
+    }
+    function addProject() {
+      const i = proj++;
+      const div = document.createElement('div');
+      div.className = 'entry';
+      div.innerHTML = `<h4>Project ${i + 1}</h4>
+        <label for="proj${i}-name">Project name</label><input id="proj${i}-name" name="proj[${i}][name]">
+        <label for="proj${i}-url">Link</label><input id="proj${i}-url" name="proj[${i}][url]">
+        <label for="proj${i}-desc">Description</label><textarea id="proj${i}-desc" name="proj[${i}][desc]"></textarea>`;
+      document.getElementById('proj-entries').append(div);
+    }
+    addExperience();
+    document.getElementById('add-exp').addEventListener('click', addExperience);
+    document.getElementById('add-proj').addEventListener('click', addProject);
+    window.SKILL_CLICKS = 0;
+    document.getElementById('add-skill').addEventListener('click', () => window.SKILL_CLICKS++);
+
+    document.getElementById('application').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = {};
+      for (const [k, v] of new FormData(e.target).entries()) data[k] = v;
+      for (const cb of document.querySelectorAll('input[type=checkbox]')) data[cb.name] = cb.checked;
+      data.skill_clicks = window.SKILL_CLICKS;
+      await fetch('/submitted', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) });
+      document.body.innerHTML = '<h1>Thank you for applying!</h1><p>We have received your application.</p>';
+    });
+  </script>
+</body>
+</html>
